@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "check-template",
+  "id": "booth-image-pack",
+  "name": "BOOTH向け画像素材集（自主ルール）",
+  "sourceType": "user-workflow",
+  "checkedOn": null,
+  "sourceUrl": null,
+  "notice": "サイズと枚数は自主設定。BOOTH公式仕様の全件検査ではありません。",
+  "maxArchiveBytes": null,
+  "roles": [
+    {
+      "id": "product",
+      "count": {
+        "min": 1,
+        "max": null
+      },
+      "formats": [
+        "png",
+        "jpeg"
+      ],
+      "dimensions": {
+        "mode": "none"
+      },
+      "maxBytes": null,
+      "evenDimensions": false,
+      "transparency": "optional",
+      "minDpi": null,
+      "marginAdvisoryPx": null,
+      "directory": "product",
+      "namePattern": "{original}"
+    },
+    {
+      "id": "cover",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "formats": [
+        "png",
+        "jpeg"
+      ],
+      "dimensions": {
+        "mode": "exact",
+        "width": 1200,
+        "height": 1200
+      },
+      "maxBytes": null,
+      "evenDimensions": false,
+      "transparency": "optional",
+      "minDpi": null,
+      "marginAdvisoryPx": null,
+      "directory": "promotion",
+      "namePattern": "cover.{ext}"
+    }
+  ]
+}

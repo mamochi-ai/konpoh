@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "bundle-template",
+  "id": "sale-and-promotion",
+  "name": "スタンプ投稿＋宣伝画像",
+  "templates": [
+    "line-static",
+    "booth-image-pack"
+  ],
+  "outputs": [
+    {
+      "id": "line-upload",
+      "templateId": "line-static",
+      "roles": [
+        "sticker",
+        "main",
+        "tab"
+      ],
+      "archiveName": "line-upload.zip"
+    },
+    {
+      "id": "promotion",
+      "templateId": "booth-image-pack",
+      "roles": [
+        "cover"
+      ],
+      "archiveName": "promotion.zip"
+    }
+  ],
+  "note": "各outputの選択rolesだけを検査。未選択product役割の不足はこのセットでは検査しない。"
+}

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "check-template",
+  "id": "line-static",
+  "name": "LINE通常静止画スタンプ",
+  "sourceType": "official-derived",
+  "checkedOn": "2026-11-01",
+  "sourceUrl": "https://creator.line.me/ja/guideline/sticker/",
+  "selectedStickerCount": 16,
+  "allowedStickerCounts": [
+    8,
+    16,
+    24,
+    32,
+    40
+  ],
+  "maxArchiveBytes": 60000000,
+  "byteConvention": "1MB = 1000000 bytes（保守的なアプリ換算）",
+  "roles": [
+    {
+      "id": "sticker",
+      "count": {
+        "min": 16,
+        "max": 16
+      },
+      "formats": [
+        "png"
+      ],
+      "dimensions": {
+        "mode": "max",
+        "width": 370,
+        "height": 320
+      },
+      "maxBytes": 1000000,
+      "evenDimensions": true,
+      "transparency": "required",
+      "minDpi": 72,
+      "marginAdvisoryPx": 10,
+      "directory": "",
+      "namePattern": "{index:02}.png"
+    },
+    {
+      "id": "main",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "formats": [
+        "png"
+      ],
+      "dimensions": {
+        "mode": "exact",
+        "width": 240,
+        "height": 240
+      },
+      "maxBytes": 1000000,
+      "evenDimensions": true,
+      "transparency": "required",
+      "minDpi": 72,
+      "marginAdvisoryPx": 10,
+      "directory": "",
+      "namePattern": "main.png"
+    },
+    {
+      "id": "tab",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "formats": [
+        "png"
+      ],
+      "dimensions": {
+        "mode": "exact",
+        "width": 96,
+        "height": 74
+      },
+      "maxBytes": 1000000,
+      "evenDimensions": true,
+      "transparency": "required",
+      "minDpi": 72,
+      "marginAdvisoryPx": 10,
+      "directory": "",
+      "namePattern": "tab.png"
+    }
+  ]
+}
