@@ -1,5 +1,5 @@
 import { useRef } from 'preact/hooks';
-import { evaluation, newEmptyProject, pack, restoreFromBackup, runCheck, saveBackup, setState, triggerDownload, useApp } from '../app/store';
+import { askConfirm, evaluation, newEmptyProject, pack, restoreFromBackup, runCheck, saveBackup, saveFile, setState, useApp } from '../app/store';
 import { exportFileName, exportGate, type ScopeEval } from '../core/rules';
 import { bytesText, FindingList, Mascot } from './common';
 import { IconDownload, IconFolder, IconImage } from './icons';
@@ -161,12 +161,9 @@ function ScopePack({ se }: { se: ScopeEval }) {
             <p class="small">
               {bytesText(result.bytes)}・{result.fileCount}件。再展開してSHA-256が元画像と一致することを確認しました。
             </p>
-            <button class="btn btn-small" onClick={() => triggerDownload(result.url, result.fileName)}>
+            <button class="btn btn-small" onClick={() => saveFile(result.blob, result.fileName, `pack:${se.scope.id}`)}>
               <IconDownload size={18} /> もう一度保存
             </button>
-            <a class="small link" href={result.url} download={result.fileName}>
-              保存されない場合はここをタップ
-            </a>
           </div>
         </div>
       )}
@@ -222,7 +219,7 @@ export function PackView() {
             <button
               class="btn"
               onClick={() => {
-                if (confirm('新しい作品を始めますか？（端末に保存していない変更は失われます）')) newEmptyProject();
+                askConfirm('新しい作品を始めますか？ 端末に保存していない変更は失われます。', '新しい作品を始める', true).then((ok) => ok && newEmptyProject());
               }}
             >
               新しい作品を始める
@@ -231,9 +228,9 @@ export function PackView() {
           {s.lastBackup && (
             <p class="small">
               作成済み：{s.lastBackup.name}（{bytesText(s.lastBackup.bytes)}）{' '}
-              <a class="link" href={s.lastBackup.url} download={s.lastBackup.name}>
+              <button class="btn btn-small" onClick={() => saveFile(s.lastBackup!.blob, s.lastBackup!.name, 'backup')}>
                 もう一度保存
-              </a>
+              </button>
             </p>
           )}
           <input
@@ -247,7 +244,11 @@ export function PackView() {
             onChange={(e) => {
               const f = e.currentTarget.files?.[0];
               e.currentTarget.value = '';
-              if (f && (!s.project.assets.length || confirm('現在の作品をバックアップの内容で置き換えますか？'))) restoreFromBackup(f);
+              if (!f) return;
+              if (!s.project.assets.length) restoreFromBackup(f);
+              else askConfirm('現在の作品をバックアップの内容で置き換えますか？', '置き換える', true).then((ok) => {
+                  if (ok) restoreFromBackup(f);
+                });
             }}
           />
         </section>

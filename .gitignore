@@ -3,3 +3,4 @@ dist/
 e2e/out/
 *.log
 e2e-log.txt
+dist-artifact/

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { deleteAsset, evaluation, exportOriginal, replaceAssetFile, roleOps, setState, templatesMap, useApp } from '../app/store';
+import { askConfirm, deleteAsset, evaluation, exportOriginal, replaceAssetFile, roleOps, setState, templatesMap, useApp } from '../app/store';
 import { factsValid } from '../core/facts';
 import { CONTAINER_LABEL, PNG_COLOR_TYPE } from '../core/sniff';
 import { roleLabel } from '../core/templates';
@@ -241,7 +241,7 @@ export function DetailPanel() {
         <button
           class="btn btn-block btn-danger"
           onClick={() => {
-            if (confirm(`「${asset.originalName}」をこの作品から外しますか？（元のファイルは変わりません）`)) deleteAsset(asset.id);
+            askConfirm(`「${asset.originalName}」をこの作品から外しますか？ 元のファイルは変わりません。`, '作品から外す', true).then((ok) => ok && deleteAsset(asset.id));
           }}
         >
           <IconTrash /> 作品から外す

@@ -77,7 +77,7 @@ async function newPage(viewport) {
   page.on('request', (r) => requests.push(r.url()));
   page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
   page.on('pageerror', (e) => consoleErrors.push(String(e)));
-  page.on('dialog', (d) => d.accept());
+  page.on('dialog', (d) => { consoleErrors.push(`native dialog used: ${d.message()}`); d.dismiss(); });
   await page.goto(ORIGIN + '/');
   await page.waitForSelector('text=販売前チェック');
   return { ctx, page };
@@ -112,6 +112,7 @@ async function card(page, label) {
 async function newProject(page) {
   await page.getByRole('tab', { name: /梱包/ }).click();
   await page.getByRole('button', { name: '新しい作品を始める' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '新しい作品を始める' }).click();
   await page.getByRole('tab', { name: /チェック/ }).click();
 }
 
@@ -122,6 +123,7 @@ await page.screenshot({ path: join(OUT, '1024-empty.png') });
 await step('空状態で待機マスコットを表示', async () => {
   const src = await page.getAttribute('.mascot-card img', 'src');
   assert(src.includes('mascot-waiting'), src);
+  assert(await page.$eval('.mascot-card img', (i) => i.complete && i.naturalWidth > 0), 'マスコット画像が読めない');
   await noHScroll(page, '1024 empty');
 });
 
@@ -358,6 +360,8 @@ await step('バックアップZIP保存→新規→復元（素材・役割・�
   const p = join(OUT, 'backup.zip');
   await dl.saveAs(p);
   await page.getByRole('button', { name: '新しい作品を始める' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '新しい作品を始める' }).click();
+  assert((await page.locator('.thumb-card').count()) === 0, '新規で空');
   await page.setInputFiles('[data-testid=input-restore]', p);
   await page.waitForSelector('.toast >> text=バックアップを復元しました');
   await page.getByRole('tab', { name: /チェック/ }).click();

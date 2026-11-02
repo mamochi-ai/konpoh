@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
+  askConfirm,
   bundlesMap,
   downloadText,
   removeUserBundle,
@@ -276,7 +277,7 @@ function CheckTemplateEditor({ template, onDuplicate, onUse }: { template: Check
                 toast('使用中のテンプレートは削除できません。先に別のテンプレートへ切り替えてください。', 'error');
                 return;
               }
-              if (confirm(`「${template.name}」を削除しますか？`)) {
+              if (await askConfirm(`「${template.name}」を削除しますか？`, '削除する', true)) {
                 await removeUserTemplate(template.id);
                 setState({ templateManager: { open: true, selectedId: 'line-static' } });
               }
@@ -502,7 +503,7 @@ function BundleEditor({ bundle, onDuplicate, onUse }: { bundle: BundleTemplate; 
                 toast('使用中の組合せセットは削除できません', 'error');
                 return;
               }
-              if (confirm(`「${bundle.name}」を削除しますか？`)) {
+              if (await askConfirm(`「${bundle.name}」を削除しますか？`, '削除する', true)) {
                 await removeUserBundle(bundle.id);
                 setState({ templateManager: { open: true, selectedId: 'line-static' } });
               }

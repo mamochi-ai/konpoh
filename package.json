@@ -10,7 +10,8 @@
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "node e2e/run.mjs"
+    "e2e": "node e2e/run.mjs",
+    "build:artifact": "tsc --noEmit && vite build --mode artifact && node scripts/build-artifact.mjs"
   },
   "dependencies": {
     "fflate": "0.8.3",

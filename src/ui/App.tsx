@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { abortJob, dismissToast, evaluation, getState, importFiles, saveNow, setState, useApp, type Tab } from '../app/store';
+import { abortJob, answerConfirm, dismissToast, evaluation, getState, importFiles, saveNow, setState, useApp, type Tab } from '../app/store';
 import { IconBox, IconClose, IconImage, IconLock, IconSave, IconZip, IconArrowRight } from './icons';
 import { CheckView } from './CheckView';
 import { PackView } from './PackView';
@@ -22,12 +22,13 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (s.templateManager.open) setState({ templateManager: { open: false, selectedId: null } });
+      if (s.confirm) answerConfirm(false);
+      else if (s.templateManager.open) setState({ templateManager: { open: false, selectedId: null } });
       else if (s.selectedAssetId) setState({ selectedAssetId: null });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [s.templateManager.open, s.selectedAssetId]);
+  }, [s.templateManager.open, s.selectedAssetId, s.confirm]);
 
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
@@ -180,6 +181,22 @@ export function App() {
       </div>
 
       {s.templateManager.open && <TemplateManager />}
+
+      {s.confirm && (
+        <div class="modal-backdrop confirm-backdrop">
+          <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
+            <p id="confirm-msg">{s.confirm.message}</p>
+            <div class="confirm-actions">
+              <button class="btn" onClick={() => answerConfirm(false)} autoFocus>
+                やめる
+              </button>
+              <button class={`btn ${s.confirm.danger ? 'btn-danger-solid' : 'btn-primary'}`} onClick={() => answerConfirm(true)}>
+                {s.confirm.okLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -46,7 +46,7 @@ export interface PackResult {
   scopeId: string;
   mode: ExportMode;
   fileName: string;
-  url: string;
+  blob: Blob;
   bytes: number;
   expectedBytes: number;
   fileCount: number;
@@ -66,7 +66,8 @@ export interface AppState {
   userTemplates: CheckTemplate[];
   userBundles: BundleTemplate[];
   thumbs: Record<string, { url: string | null; version: number }>;
-  lastBackup: { url: string; name: string; bytes: number } | null;
+  lastBackup: { blob: Blob; name: string; bytes: number } | null;
+  confirm: ConfirmRequest | null;
   tab: Tab;
   selectedAssetId: string | null;
   filter: 'all' | 'attention';
@@ -106,6 +107,7 @@ let state: AppState = {
   persistence: null,
   previewBg: 'checker',
   lastBackup: null,
+  confirm: null,
 };
 
 const listeners = new Set<() => void>();
@@ -163,10 +165,24 @@ export function dismissToast(id: number) {
   setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
 }
 
-// ---------------------------------------------------------------- ダウンロード（Blob URLはすぐにrevokeしない）
+// ---------------------------------------------------------------- 保存（ファイルを端末へ渡す）
+// claude.ai上では埋め込みページのダウンロードリンクが動かないため、プラットフォームの保存機能を使う。
+// 単独で配信した場合（開発・自前ホスティング）は通常のダウンロードにする。Blob URLはすぐにrevokeしない。
+
+interface DownloadsApi {
+  save(req: { filename: string; data: Blob }): Promise<{ status: string }>;
+}
+let downloadsApi: Promise<DownloadsApi | null> | null = null;
+function getDownloads(): Promise<DownloadsApi | null> {
+  if (!downloadsApi) {
+    const c = (window as unknown as { claude?: { use?: (n: string) => Promise<unknown> } }).claude;
+    downloadsApi = c?.use ? (c.use('downloads') as Promise<DownloadsApi | null>).catch(() => null) : Promise.resolve(null);
+  }
+  return downloadsApi;
+}
 
 const heldUrls = new Map<string, string>();
-export function holdUrl(key: string, blob: Blob): string {
+function holdUrl(key: string, blob: Blob): string {
   const prev = heldUrls.get(key);
   if (prev) URL.revokeObjectURL(prev);
   const url = URL.createObjectURL(blob);
@@ -174,7 +190,28 @@ export function holdUrl(key: string, blob: Blob): string {
   return url;
 }
 
-export function triggerDownload(url: string, fileName: string) {
+const SAVE_ERRORS: Record<string, string> = {
+  declined: '保存をキャンセルしました',
+  rejected_extension: 'この種類のファイルはここから保存できません',
+  extension_not_enabled: 'この種類のファイルはここから保存できません',
+  rate_limited: '保存の確認画面が開いています。閉じてからもう一度押してください',
+  too_large: 'ファイルが大きすぎて保存できません',
+};
+
+/** ファイルを保存する。成功（または保存画面へ渡せた）なら true */
+export async function saveFile(blob: Blob, fileName: string, key: string): Promise<boolean> {
+  const api = await getDownloads();
+  if (api) {
+    try {
+      await api.save({ filename: fileName, data: blob });
+      return true;
+    } catch (e) {
+      const code = (e as { code?: string })?.code ?? 'unavailable';
+      toast(`${fileName}：${SAVE_ERRORS[code] ?? '保存できませんでした（この表示では保存機能が使えません）'}`, code === 'declined' ? 'info' : 'error');
+      return false;
+    }
+  }
+  const url = holdUrl(key, blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = fileName;
@@ -182,10 +219,30 @@ export function triggerDownload(url: string, fileName: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+  return true;
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => heldUrls.forEach((u) => URL.revokeObjectURL(u)));
+}
+
+// ---------------------------------------------------------------- 画面内の確認（confirm()は使わない）
+
+export interface ConfirmRequest {
+  message: string;
+  okLabel: string;
+  danger?: boolean;
+  resolve: (ok: boolean) => void;
+}
+
+export function askConfirm(message: string, okLabel = 'はい', danger = false): Promise<boolean> {
+  state.confirm?.resolve(false);
+  return new Promise((resolve) => setState({ confirm: { message, okLabel, danger, resolve } }));
+}
+export function answerConfirm(ok: boolean) {
+  const c = state.confirm;
+  setState({ confirm: null });
+  c?.resolve(ok);
 }
 
 // ---------------------------------------------------------------- 起動
@@ -433,8 +490,7 @@ export function deleteAsset(assetId: string) {
 export function exportOriginal(assetId: string) {
   const a = state.project.assets.find((x) => x.id === assetId);
   if (!a) return;
-  const url = holdUrl(`original:${assetId}`, a.blob);
-  triggerDownload(url, asciiFileName(a.originalName, `original-${a.sha256.slice(0, 8)}.bin`));
+  saveFile(a.blob, asciiFileName(a.originalName, `original-${a.sha256.slice(0, 8)}.bin`), `original:${assetId}`);
 }
 
 export const roleOps = {
@@ -551,12 +607,11 @@ export async function pack(scopeId: string, mode: ExportMode) {
     const max = s.scope.template.maxArchiveBytes;
     if (mode === 'upload' && max !== null && blob.size > max) problems.push(`完成ZIPが上限${max.toLocaleString()} bytesを超えました`);
     if (problems.length) throw new Error(`検証に失敗したため保存を止めました：${problems.join(' / ')}`);
-    const url = holdUrl(`pack:${scopeId}`, blob);
     const result: PackResult = {
       scopeId,
       mode,
       fileName,
-      url,
+      blob,
       bytes: blob.size,
       expectedBytes: s.zipBytes,
       fileCount: back.files.length,
@@ -564,7 +619,8 @@ export async function pack(scopeId: string, mode: ExportMode) {
       createdAt: new Date().toISOString(),
     };
     setState((st) => ({ packResults: { ...st.packResults, [scopeId]: result } }));
-    triggerDownload(url, fileName);
+    endJob(job);
+    await saveFile(blob, fileName, `pack:${scopeId}`);
   } catch (e) {
     const message = e instanceof ZipAbortError ? '中止しました' : (e as Error).message;
     setState((st) => ({ packErrors: { ...st.packErrors, [scopeId]: { mode, message } } }));
@@ -585,10 +641,10 @@ export async function saveBackup() {
       onProgress: () => progress(job, ++n),
     });
     const name = backupFileName(state.project);
-    const url = holdUrl('backup', blob);
-    triggerDownload(url, name);
-    setState({ lastBackup: { url, name, bytes: blob.size } });
+    setState({ lastBackup: { blob, name, bytes: blob.size } });
+    endJob(job);
     toast(`バックアップZIPを作成しました：${name}`, 'success');
+    await saveFile(blob, name, 'backup');
   } catch (e) {
     toast(e instanceof ZipAbortError ? 'バックアップを中止しました' : `バックアップに失敗しました: ${(e as Error).message}`, 'error');
   } finally {
@@ -696,6 +752,5 @@ export async function removeUserBundle(id: string): Promise<void> {
 }
 
 export function downloadText(text: string, fileName: string, key: string) {
-  const url = holdUrl(key, new Blob([text], { type: 'application/json' }));
-  triggerDownload(url, fileName);
+  saveFile(new Blob([text], { type: 'application/json' }), fileName, key);
 }

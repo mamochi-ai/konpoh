@@ -7,7 +7,18 @@
 - 同梱テンプレート：`src/templates-builtin/`（LINE通常静止画、BOOTH向け自主ルール、組合せ例）
 - マスコット：`public/mascot/`（キット同梱の透過PNGを320pxに縮小。透過は維持）
 
-## 起動手順
+## iPadだけで使う（PC不要）
+
+次のリンクをiPadのSafariかClaudeアプリで開くと、そのまま使えます（非公開。開けるのは所有者と共有した人だけ）。
+
+**https://claude.ai/artifact/NnUG4mckozZqu8MoRg14PG**
+
+- 画像やZIPの処理はiPadのブラウザ内だけで行い、どこにも送信しません。
+- ZIPやバックアップの保存は、claude.aiの保存確認（Claudeアプリでは共有シート）が出るので「保存」を選びます。
+- 端末内保存（「保存」ボタン）はこのページ専用の領域に入ります。消えることがあるので、大事な作品はバックアップZIPも保存してください。
+- 中身は `artifact/konpoh.html`（`npm run build:artifact` で作る1ファイル版。画像・JS・CSSを埋め込み済み）。
+
+## 起動手順（PCで開発する場合）
 
 ```bash
 npm ci            # 依存は package-lock.json で固定（.npmrc で legacy-peer-deps を指定）
@@ -47,6 +58,9 @@ Web Crypto（SHA-256）を使うため、公開する場合は **HTTPS** で配�
 - マスコット：検査前は待機、全画像検査済みかつ指摘ゼロのときだけ検査完了、ZIP生成成功で梱包完了。
 
 ### 保存ファイル名について
+
+claude.ai上では、埋め込みページのダウンロードリンクが使えないため、claude.aiの保存機能（`downloads`）を通して保存します。自前で配信した場合は通常のダウンロードになります。確認は画面内のダイアログで行います（`confirm()`は使いません）。
+
 
 テスト環境のChromiumでは、`download` 属性の**日本語ファイル名が捨てられ「download」（拡張子なし）になる**ことを確認しました。iPad Safariでの挙動を実機確認できないため、保存名は英数字にしています。
 

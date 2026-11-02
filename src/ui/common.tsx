@@ -1,6 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import type { Finding, ImageStatus, RuleSource, Severity } from '../core/types';
 import { IconCheck, IconError, IconInfo, IconUnknown, IconWarn } from './icons';
+import mascotWaiting from '../assets/mascot-waiting.png';
+import mascotChecked from '../assets/mascot-checked.png';
+import mascotPacked from '../assets/mascot-packed.png';
+
+const MASCOT = { waiting: mascotWaiting, checked: mascotChecked, packed: mascotPacked };
 
 export const STATUS_LABEL: Record<ImageStatus, string> = { pass: '合格', warn: '要確認', error: 'エラー', unchecked: '未検査' };
 export const SEVERITY_LABEL: Record<Severity, string> = { error: 'エラー', warning: '要確認', unknown: '未確認', info: '参考' };
@@ -67,7 +72,7 @@ export function FindingList({ findings, empty }: { findings: Finding[]; empty?: 
 }
 
 export function Mascot({ kind, alt, size = 128 }: { kind: 'waiting' | 'checked' | 'packed'; alt: string; size?: number }) {
-  return <img class="mascot" src={`./mascot/mascot-${kind}.png`} alt={alt} width={size} height={size} style={{ width: `${size}px`, height: `${size}px` }} />;
+  return <img class="mascot" src={MASCOT[kind]} alt={alt} width={size} height={size} style={{ width: `${size}px`, height: `${size}px` }} />;
 }
 
 export function bytesText(n: number): string {
