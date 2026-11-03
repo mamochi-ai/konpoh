@@ -25,6 +25,7 @@ import { LINE_TEMPLATE, LINE_TEMPLATE_ID } from '../core/templates';
 import { buildBackup, backupFileName, restoreBackup } from '../core/backup';
 import * as db from './db';
 import { analyzeAsset, makeThumbnail } from './imaging';
+import { imageDims, isLikelySheet, type Dims } from '../core/sheet';
 
 export type Tab = 'edit' | 'check' | 'pack';
 export type EditTool = 'split' | 'background';
@@ -68,6 +69,10 @@ export interface AppState {
   lastBackup: { blob: Blob; name: string; bytes: number } | null;
   confirm: ConfirmRequest | null;
   edit: { assetId: string | null; tool: EditTool };
+  /** 各画像の寸法（ヘッダーから。一覧画像の案内に使う） */
+  dims: Record<string, Dims | null>;
+  /** 画像追加で編集タブへ切り替えたときの案内 */
+  editHint: { names: string[] } | null;
   tab: Tab;
   selectedAssetId: string | null;
   filter: 'all' | 'attention';
@@ -105,6 +110,8 @@ let state: AppState = {
   lastBackup: null,
   confirm: null,
   edit: { assetId: null, tool: 'split' },
+  dims: {},
+  editHint: null,
 };
 
 const listeners = new Set<() => void>();
@@ -275,8 +282,9 @@ async function refreshThumbnails() {
       const s = state;
       const next = s.project.assets.find((a) => s.thumbs[a.id]?.version !== a.version);
       if (!next) break;
-      const blob = await makeThumbnail(next);
+      const { blob, dims } = await makeThumbnail(next);
       const stillThere = state.project.assets.some((a) => a.id === next.id);
+      setState((st) => ({ dims: { ...st.dims, [next.id]: dims } }));
       setState((st) => {
         const prev = st.thumbs[next.id];
         if (prev?.url) URL.revokeObjectURL(prev.url);
@@ -404,7 +412,18 @@ export async function importFiles(files: File[]) {
     const { scopes } = resolveScopes(state.project.target, TEMPLATES, state.project.settings.stickerCounts);
     const { project, added: n } = suggestRoles(state.project, scopes, added.map((a) => a.id));
     if (n) updateProject(() => project);
-    toast(`${added.length}件を追加しました${n ? `。ファイル名から${n}件の役割候補を付けました（確定してください）` : ''}`, 'success');
+    // 一覧画像らしい大きい画像（スタンプ上限の1.5倍超）があれば、分割できる編集タブへ案内する
+    const dims: Record<string, Dims | null> = {};
+    for (const a of added) dims[a.id] = imageDims(new Uint8Array(await a.blob.slice(0, 262144).arrayBuffer())) ?? imageDims(new Uint8Array(await a.blob.arrayBuffer()));
+    setState((st) => ({ dims: { ...st.dims, ...dims } }));
+    const big = added.filter((a) => isLikelySheet(dims[a.id], LINE_TEMPLATE));
+    if (big.length) {
+      setState({ tab: 'edit', edit: { assetId: big[0].id, tool: 'split' }, editHint: { names: big.map((a) => a.originalName) }, selectedAssetId: null });
+      scrollTop();
+      toast(`${added.length}件を追加しました。一覧画像のような大きい画像があるので、分割できる編集タブを開きました。`, 'success');
+    } else {
+      toast(`${added.length}件を追加しました${n ? `。ファイル名から${n}件の役割候補を付けました（確定してください）` : ''}`, 'success');
+    }
   }
   setState({ importNotes: notes });
   if (!added.length && notes.length) toast('取り込める画像がありませんでした。下の一覧で理由を確認してください。', 'error');
@@ -705,9 +724,24 @@ export async function addDerivedAssets(
     return next;
   });
   refreshThumbnails();
+  if (op === 'split') setState({ editHint: null });
   const ids = created.map((a) => a.id);
   await runCheck(ids);
   return ids;
+}
+
+/** 大きい画像を編集タブで開く（チェックタブの案内から） */
+export function openInEditor(assetId: string) {
+  setState({ tab: 'edit', edit: { assetId, tool: 'split' }, selectedAssetId: null, editHint: null });
+  scrollTop();
+}
+
+function scrollTop() {
+  try {
+    window.scrollTo({ top: 0 });
+  } catch {
+    /* 古いブラウザでは無視 */
+  }
 }
 
 export function setEdit(patch: Partial<AppState['edit']>) {

@@ -1,4 +1,5 @@
-import { evaluation, roleOps, setAlphaThreshold, setState, setStickerCount, useApp, renameProject } from '../app/store';
+import { evaluation, openInEditor, roleOps, setAlphaThreshold, setState, setStickerCount, useApp, renameProject } from '../app/store';
+import { unsplitSheets } from '../core/sheet';
 import type { RoleEval, ScopeEval } from '../core/rules';
 import type { AssetRecord } from '../core/types';
 import { LINE_TEMPLATE, stickerCountFor } from '../core/templates';
@@ -191,6 +192,24 @@ export function CheckView() {
             {ev.scopeErrors.join(' / ')}
           </div>
         )}
+
+        {(() => {
+          const big = unsplitSheets(s.project.assets, s.dims, LINE_TEMPLATE);
+          if (!big.length) return null;
+          return (
+            <div class="banner banner-warn" role="status">
+              <span>
+                まだ分割していない一覧画像のような大きい画像が{big.length}枚あります。このままではスタンプに使えません。編集タブで分割・縮小できます。
+                <span class="small"> 対象：{big.map((a) => a.originalName.length > 24 ? `${a.originalName.slice(0, 14)}…${a.originalName.slice(-8)}` : a.originalName).join('、')}</span>
+              </span>
+              <span class="banner-actions">
+                <button class="btn btn-small btn-primary" onClick={() => openInEditor(big[0].id)}>
+                  編集で分割する
+                </button>
+              </span>
+            </div>
+          );
+        })()}
 
         {hasSuggested && (
           <div class="banner banner-warn" role="status">

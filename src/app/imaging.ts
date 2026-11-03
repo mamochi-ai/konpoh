@@ -88,18 +88,22 @@ export async function analyzeAsset(asset: AssetRecord, threshold: number): Promi
 const THUMB = 320;
 
 /** 縮小プレビュー。上限を超える画像は展開しない */
-export async function makeThumbnail(asset: AssetRecord): Promise<Blob | null> {
+export async function makeThumbnail(asset: AssetRecord): Promise<{ blob: Blob | null; dims: { width: number; height: number } | null }> {
   const head = new Uint8Array(await asset.blob.slice(0, 65536).arrayBuffer());
   const container = detectContainer(head);
-  if (container !== 'png' && container !== 'jpeg') return null;
+  if (container !== 'png' && container !== 'jpeg') return { blob: null, dims: null };
   const { facts, shouldDecode } = headerFacts(new Uint8Array(await asset.blob.arrayBuffer()), asset.originalName, asset.sha256, 8);
-  if (!shouldDecode) return null;
+  const dims = facts.width && facts.height ? { width: facts.width, height: facts.height } : null;
+  return { blob: shouldDecode ? await thumbBlob(asset, container, facts.width, facts.height) : null, dims };
+}
+
+async function thumbBlob(asset: AssetRecord, container: string, fw?: number, fh?: number): Promise<Blob | null> {
   let bmp: ImageBitmap | null = null;
   let release = () => {};
   try {
     bmp = await decodeBitmap(asset.blob, container);
-    const w = facts.width ?? bmp.width;
-    const h = facts.height ?? bmp.height;
+    const w = fw ?? bmp.width;
+    const h = fh ?? bmp.height;
     if (w * h > APP_LIMITS.maxPixels) return null;
     const scale = Math.min(1, THUMB / Math.max(w, h));
     const tw = Math.max(1, Math.round(w * scale));

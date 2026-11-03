@@ -130,6 +130,7 @@ await step('空状態で待機マスコットを表示', async () => {
 await step('valid-line-16.zip：読込→候補確定→検査（寸法/形式/容量/透過/偶数/DPIにエラーなし）', async () => {
   await loadZip(page, join(FIX, 'valid-line-16.zip'));
   assert((await page.locator('.thumb-card').count()) === 18, 'カード18枚');
+  assert((await page.getByRole('tab', { name: /チェック/ }).getAttribute('aria-selected')) === 'true', '個別ファイルならチェックのまま');
   assert(await page.locator('.badge-suggest').count() === 18, '候補バッジ18');
   // 未検査のまま
   const c0 = await counts(page);
@@ -210,6 +211,7 @@ await step('出力ZIPを再読込しても役割数とバイトを維持', async
 await step('invalid-two-images.zip：06は幅400で上限超過、12は完全不透明。投稿用は停止', async () => {
   await newProject(page);
   await loadZip(page, join(FIX, 'invalid-two-images.zip'));
+  assert((await page.getByRole('tab', { name: /チェック/ }).getAttribute('aria-selected')) === 'true', '400×320の1枚は一覧画像扱いしない');
   await page.getByRole('button', { name: '候補を確定' }).click();
   await runCheck(page);
   const c = await counts(page);
@@ -355,7 +357,15 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   writeFileSync(longSheet, readFileSync(join(FIX, 'sheet-white-2x3.png')));
   await addImages(page, [longSheet]);
   const sheetSha = sha(readFileSync(longSheet));
-  await page.getByRole('tab', { name: /編集/ }).click();
+  // 大きい画像を追加すると、自動で編集タブ（分割）に切り替わり、手順の案内が出る
+  await page.waitForSelector('.split-overlay');
+  assert((await page.getByRole('tab', { name: /編集/ }).getAttribute('aria-selected')) === 'true', '編集タブに切替');
+  assert((await page.textContent('.edit-hint')).includes('編集タブを開きました'), '案内');
+  await page.screenshot({ path: join(OUT, '1024-edit-auto-open.png') });
+  // チェックタブにも「分割していない大きい画像」の案内が出て、ボタンで戻れる
+  await page.getByRole('tab', { name: /チェック/ }).click();
+  assert((await page.textContent('.main-col')).includes('大きい画像が1枚'), 'チェックタブの案内');
+  await page.getByRole('button', { name: '編集で分割する' }).click();
   await page.waitForSelector('.split-overlay');
   const warn = await page.textContent('.tool');
   assert(warn.includes('背景が透明ではありません'), '不透明背景の注意');
@@ -417,6 +427,7 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   await page.getByRole('tab', { name: /チェック/ }).click();
   const heads = await page.$$eval('.role-head', (els) => els.map((e) => e.textContent));
   assert(heads.some((h) => h.includes('スタンプ') && h.includes('6/16')), heads.join('|'));
+  assert(!(await page.textContent('.main-col')).includes('まだ分割していない一覧画像'), '分割後は案内が消える');
   // 切り出した6枚は寸法・偶数・透過・容量・DPIにエラーなし
   for (let i = 1; i <= 6; i++) {
     await (await card(page, String(i).padStart(2, '0'))).click();

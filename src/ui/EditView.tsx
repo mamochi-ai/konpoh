@@ -20,7 +20,7 @@ import {
 } from '../core/edit/raster';
 import { encodePng } from '../core/edit/png';
 import { Mascot } from './common';
-import { IconDownload, IconSwap } from './icons';
+import { IconClose, IconDownload, IconSwap } from './icons';
 
 const yieldTick = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -678,6 +678,22 @@ export function EditView() {
           </div>
         ) : (
           <>
+            {s.editHint && (
+              <div class="banner banner-info edit-hint" role="status">
+                <div>
+                  <strong>一覧画像のような大きい画像なので、編集タブを開きました。</strong>
+                  <ol class="steps">
+                    <li>背景が透明でなければ、先に「背景透過」で透明にする</li>
+                    <li>「一覧画像の分割」で分割線を確認する（緑の線はすき間の上）</li>
+                    <li>「◯枚を切り出して追加」を押す。切り出した画像はスタンプとしてチェックタブに並びます</li>
+                  </ol>
+                  <span class="small">1枚の絵だけなら、そのまま「1枚を切り出して追加」でLINE用の大きさに縮小できます。対象：{s.editHint.names.map((n) => shortName(n, 24)).join('、')}</span>
+                </div>
+                <button class="icon-btn" aria-label="案内を閉じる" onClick={() => setState({ editHint: null })}>
+                  <IconClose size={18} />
+                </button>
+              </div>
+            )}
             <section class="card edit-picker" aria-label="編集する画像">
               <AssetPicker selectedId={asset.id} />
               <div class="seg tool-switch" role="tablist" aria-label="編集の種類">

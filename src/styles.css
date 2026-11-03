@@ -1671,3 +1671,14 @@ input[type='range'] {
 .edit-picker .tool-switch {
   flex: none;
 }
+
+.edit-hint {
+  align-items: flex-start;
+}
+.steps {
+  margin: 6px 0;
+  padding-left: 1.4em;
+}
+.steps li {
+  margin: 2px 0;
+}
