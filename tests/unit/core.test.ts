@@ -3,16 +3,15 @@ import { zipSync, strToU8 } from 'fflate';
 import { assetFrom, factsFor, loadZipFixture, readFix } from '../helpers/fixtures';
 import { buildZip, readZip, zipSize, ZipAbortError, ZipError, normalizeZipPath } from '../../src/core/zip';
 import { asciiFileName, evaluateRole, evaluateProject, exportGate, exportFileName, resolveScopes } from '../../src/core/rules';
-import { BUILTIN_BUNDLES, BUILTIN_CHECK_TEMPLATES, cloneCheckTemplate, parseTemplateJson, templateToJson, validateBundleTemplate } from '../../src/core/templates';
+import { LINE_TEMPLATE, validateCheckTemplate } from '../../src/core/templates';
 import { addRef, changeRefRole, confirmSuggestions, moveRef, newProject, replaceAsset, setNameOverride, suggestRoles } from '../../src/core/project';
 import { headerFacts } from '../../src/core/facts';
 import { sha256Hex } from '../../src/core/hash';
 import { buildBackup, restoreBackup } from '../../src/core/backup';
 import { patternToRegex, renderName } from '../../src/core/naming';
-import type { AssetFacts, CheckTemplate, Project } from '../../src/core/types';
+import type { AssetFacts, Project } from '../../src/core/types';
 
-const tmap = new Map(BUILTIN_CHECK_TEMPLATES.map((t) => [t.id, t]));
-const bmap = new Map(BUILTIN_BUNDLES.map((b) => [b.id, b]));
+const tmap = new Map([[LINE_TEMPLATE.id, LINE_TEMPLATE]]);
 const line = tmap.get('line-static')!;
 const sticker = line.roles[0];
 const LIM = { maxEntries: 200, maxTotalBytes: 100_000_000 };
@@ -63,7 +62,7 @@ describe('形式の判定（拡張子を信用しない）', () => {
     p.assets.push({ id: 'a', originalName: 'sticker.png', sourcePath: '', blob: new Blob([]), size: jpeg.length, sha256: 'h', version: 1, addedAt: '' });
     p.facts.a = { ...facts, decode: { ok: true }, alpha: { totalPixels: 1, translucentPixels: 0, zeroAlphaPixels: 0, contentBox: { left: 0, top: 0, right: 0, bottom: 0 }, margins: { left: 0, top: 0, right: 0, bottom: 0 }, threshold: 8 } };
     p.refs.push({ id: 'r', assetId: 'a', templateId: 'line-static', roleId: 'sticker', order: 1 });
-    const codes = evaluateProject(p, tmap, bmap).assets.a.findings.map((f) => f.code);
+    const codes = evaluateProject(p, tmap).assets.a.findings.map((f) => f.code);
     expect(codes).toEqual(expect.arrayContaining(['ext-mismatch', 'format', 'transparency-none']));
   });
   it('アニメPNG（acTL）は対象外', () => {
@@ -163,9 +162,9 @@ describe('梱包：読込→検査→ZIP→再読込でバイトと役割数を�
       p.assets.push(a);
       p.facts[a.id] = await factsFor(f.data, f.name);
     }
-    const { scopes } = resolveScopes(p.target, tmap, bmap, {});
+    const { scopes } = resolveScopes(p.target, tmap, {});
     p = confirmSuggestions(suggestRoles(p, scopes).project);
-    const s = evaluateProject(p, tmap, bmap).scopes[0];
+    const s = evaluateProject(p, tmap).scopes[0];
     const byId = new Map(p.assets.map((a) => [a.id, a]));
     const blob = await buildZip(s.entries.map((e) => ({ path: e.path, size: e.size, read: async () => new Uint8Array(await byId.get(e.assetId)!.blob.arrayBuffer()) })));
     expect(blob.size).toBe(s.zipBytes);
@@ -185,7 +184,7 @@ describe('梱包：読込→検査→ZIP→再読込でバイトと役割数を�
     let p2 = newProject();
     for (const f of back.files) p2.assets.push(await assetFrom(f.data, f.name));
     p2 = suggestRoles(p2, scopes).project;
-    const s2 = evaluateProject(p2, tmap, bmap).scopes[0];
+    const s2 = evaluateProject(p2, tmap).scopes[0];
     expect(s2.roles.map((r) => r.refs.length)).toEqual([16, 1, 1]);
   });
 });
@@ -208,7 +207,7 @@ describe('書出し可否', () => {
   }
   it('未検査：投稿用は止め、作業用は「未チェック」名で許可', async () => {
     const p = await base();
-    const s = evaluateProject(p, tmap, bmap).scopes[0];
+    const s = evaluateProject(p, tmap).scopes[0];
     const up = exportGate(s, 'upload');
     expect(up.allowed).toBe(false);
     expect(up.label).toBe('未チェック');
@@ -225,7 +224,7 @@ describe('書出し可否', () => {
   it('警告だけなら確認付きで投稿用を許可', async () => {
     const p = await base();
     for (const a of p.assets) p.facts[a.id] = fakeFacts({ sha256: a.sha256, bytes: a.size, width: a.originalName === 'main.png' ? 240 : a.originalName === 'tab.png' ? 96 : 370, height: a.originalName === 'main.png' ? 240 : a.originalName === 'tab.png' ? 74 : 320, dpi: { status: 'unknown', reason: 'pHYsなし' } });
-    const s = evaluateProject(p, tmap, bmap).scopes[0];
+    const s = evaluateProject(p, tmap).scopes[0];
     const g = exportGate(s, 'upload');
     expect(s.hasErrors).toBe(false);
     expect(g.allowed).toBe(true);
@@ -236,38 +235,38 @@ describe('書出し可否', () => {
     for (const a of p.assets) p.facts[a.id] = fakeFacts({ sha256: a.sha256 });
     const a0 = p.assets[0];
     p.facts[a0.id] = fakeFacts({ sha256: a0.sha256, decode: { ok: false, reason: 'x' } });
-    const s = evaluateProject(p, tmap, bmap).scopes[0];
+    const s = evaluateProject(p, tmap).scopes[0];
     expect(exportGate(s, 'work').allowed).toBe(false);
   });
 });
 
 describe('同名ファイル・パス衝突・役割変更・差替え', () => {
-  it('同名でも別assetId。{original}の衝突は解決まで書出し停止', async () => {
-    const booth = tmap.get('booth-image-pack')!;
+  it('同名ファイルでも別assetId・出力名は01/02で衝突しない。出力名の手動変更で重なると書出し停止', async () => {
     const bytes = readFix('generated/12.png');
-    let p = newProject({ kind: 'template', templateId: booth.id });
+    let p = newProject();
     const a1 = await assetFrom(bytes, 'image.png');
     const a2 = await assetFrom(bytes, 'image.png');
     expect(a1.id).not.toBe(a2.id);
     p.assets.push(a1, a2);
-    p = addRef(addRef(p, a1.id, booth.id, 'product'), a2.id, booth.id, 'product');
-    let s = evaluateProject(p, tmap, bmap).scopes[0];
+    p = addRef(addRef(p, a1.id, 'line-static', 'sticker'), a2.id, 'line-static', 'sticker');
+    let s = evaluateProject(p, tmap).scopes[0];
+    expect(s.entries.map((e) => e.path)).toEqual(['01.png', '02.png']);
+    expect(s.setFindings.some((f) => f.code === 'path-collision')).toBe(false);
+    const ref2 = p.refs.find((r) => r.assetId === a2.id)!;
+    p = setNameOverride(p, ref2.id, '01.PNG'); // 大文字小文字違いも衝突
+    s = evaluateProject(p, tmap).scopes[0];
     expect(s.setFindings.some((f) => f.code === 'path-collision')).toBe(true);
     expect(exportGate(s, 'work').allowed).toBe(false);
-    const ref2 = p.refs.find((r) => r.assetId === a2.id)!;
-    p = setNameOverride(p, ref2.id, 'image-2.png');
-    s = evaluateProject(p, tmap, bmap).scopes[0];
-    expect(s.setFindings.some((f) => f.code === 'path-collision')).toBe(false);
-    expect(s.entries.map((e) => e.path).sort()).toEqual(['product/image-2.png', 'product/image.png']);
+    p = setNameOverride(p, ref2.id, undefined);
+    expect(evaluateProject(p, tmap).scopes[0].collisions.length).toBe(0);
   });
-  it('大文字小文字違いも衝突', async () => {
-    const booth = tmap.get('booth-image-pack')!;
-    let p = newProject({ kind: 'template', templateId: booth.id });
-    const a1 = await assetFrom(new Uint8Array([1]), 'A.png');
-    const a2 = await assetFrom(new Uint8Array([2]), 'a.PNG');
-    p.assets.push(a1, a2);
-    p = addRef(addRef(p, a1.id, booth.id, 'product'), a2.id, booth.id, 'product');
-    expect(evaluateProject(p, tmap, bmap).scopes[0].collisions.length).toBe(1);
+  it('出力名に .. などは使えない', async () => {
+    let p = newProject();
+    const a = await assetFrom(new Uint8Array([1]), 'x.png');
+    p.assets.push(a);
+    p = addRef(p, a.id, 'line-static', 'main');
+    p = setNameOverride(p, p.refs[0].id, '../main.png');
+    expect(evaluateProject(p, tmap).scopes[0].setFindings.some((f) => f.code === 'path-invalid')).toBe(true);
   });
   it('差替えでassetIdと役割を維持し、検査結果を無効化', async () => {
     const bytes = readFix('generated/06.png');
@@ -276,18 +275,18 @@ describe('同名ファイル・パス衝突・役割変更・差替え', () => {
     p.assets.push(a);
     p.facts[a.id] = await factsFor(bytes, '06.png');
     p = addRef(p, a.id, 'line-static', 'sticker');
-    expect(evaluateProject(p, tmap, bmap).assets[a.id].status).toBe('error');
+    expect(evaluateProject(p, tmap).assets[a.id].status).toBe('error');
     const fixed = readFix('generated/12.png');
     p = replaceAsset(p, a.id, { originalName: '06-fixed.png', blob: new Blob([fixed as BlobPart]), size: fixed.length, sha256: await sha256Hex(fixed), sourcePath: '06-fixed.png' });
     expect(p.assets[0].id).toBe(a.id);
     expect(p.assets[0].version).toBe(2);
     expect(p.refs[0].assetId).toBe(a.id);
-    expect(evaluateProject(p, tmap, bmap).assets[a.id].status).toBe('unchecked');
+    expect(evaluateProject(p, tmap).assets[a.id].status).toBe('unchecked');
     // 古い事実が残っていても sha 不一致で使わない
     p.facts[a.id] = await factsFor(bytes, '06.png');
-    expect(evaluateProject(p, tmap, bmap).assets[a.id].status).toBe('unchecked');
+    expect(evaluateProject(p, tmap).assets[a.id].status).toBe('unchecked');
     p.facts[a.id] = await factsFor(fixed, '06-fixed.png');
-    const ev = evaluateProject(p, tmap, bmap);
+    const ev = evaluateProject(p, tmap);
     expect(ev.assets[a.id].findings.some((f) => f.code === 'dim-max')).toBe(false);
     expect(ev.scopes[0].entries[0].path).toBe('01.png');
   });
@@ -298,101 +297,41 @@ describe('同名ファイル・パス衝突・役割変更・差替え', () => {
     for (const a of as) p = addRef(p, a.id, 'line-static', 'sticker');
     const rz = p.refs.find((r) => r.assetId === as[2].id)!;
     p = moveRef(p, rz.id, -1);
-    let s = evaluateProject(p, tmap, bmap).scopes[0];
+    let s = evaluateProject(p, tmap).scopes[0];
     expect(s.roles[0].refs.map((r) => r.asset.originalName)).toEqual(['x.png', 'z.png', 'y.png']);
     expect(s.roles[0].refs.map((r) => r.outputPath)).toEqual(['01.png', '02.png', '03.png']);
     p = changeRefRole(p, rz.id, 'line-static', 'main');
-    s = evaluateProject(p, tmap, bmap).scopes[0];
+    s = evaluateProject(p, tmap).scopes[0];
     expect(s.roles[0].refs.map((r) => r.asset.originalName)).toEqual(['x.png', 'y.png']);
     expect(s.roles[1].refs[0].outputPath).toBe('main.png');
   });
   it('スタンプ数の選択で必要枚数が変わる', () => {
     const p = newProject();
     p.settings.stickerCounts['line-static'] = 8;
-    const s = evaluateProject(p, tmap, bmap).scopes[0];
+    const s = evaluateProject(p, tmap).scopes[0];
     expect(s.roles[0].min).toBe(8);
   });
 });
 
-describe('組合せセット（2テンプレート結合）', () => {
-  it('選択した役割だけ検査。1つの元画像を複数役割で参照し、ZIPを分けて出力', async () => {
-    const zip = await loadZipFixture('valid-line-16.zip');
-    let p = newProject({ kind: 'bundle', bundleId: 'sale-and-promotion' });
-    for (const f of zip.files) {
-      const a = await assetFrom(f.data, f.name);
-      p.assets.push(a);
-      p.facts[a.id] = await factsFor(f.data, f.name);
-    }
-    const { scopes } = resolveScopes(p.target, tmap, bmap, {});
-    p = confirmSuggestions(suggestRoles(p, scopes).project);
-    // main.png を宣伝用表紙にも参照（同じ素材を2役割で）
-    const main = p.assets.find((a) => a.originalName === 'main.png')!;
-    p = addRef(p, main.id, 'booth-image-pack', 'cover');
-    const ev = evaluateProject(p, tmap, bmap);
-    expect(ev.scopes.map((s) => s.scope.archiveName)).toEqual(['line-upload.zip', 'promotion.zip']);
-    const promo = ev.scopes[1];
-    // productの不足は検査しない
-    expect(promo.setFindings.filter((f) => f.code.startsWith('count'))).toEqual([]);
-    expect(promo.entries.map((e) => e.path)).toEqual(['promotion/cover.png']);
-    // 表紙1200×1200（自作ルール）に240×240は違反、出典は自作
-    const f = ev.assets[main.id].findings.find((x) => x.code === 'dim-exact')!;
-    expect(f.source).toBe('user');
-    expect(f.roleLabel).toContain('表紙');
-    // LINE側の判定はそのまま（条件を緩和しない）
-    expect(ev.scopes[0].entries.length).toBe(18);
-    expect(exportGate(ev.scopes[1], 'upload').allowed).toBe(false);
-  });
-  it('同名roleIdはtemplateIdで名前空間を分ける', async () => {
-    const t2: CheckTemplate = { ...cloneCheckTemplate(tmap.get('line-static')!, new Set(['line-static'])), id: 'line-b' };
-    const tm = new Map(tmap);
-    tm.set(t2.id, t2);
-    const bundle = { schemaVersion: 1 as const, kind: 'bundle-template' as const, id: 'b', name: 'b', templates: ['line-static', 'line-b'], outputs: [
-      { id: 'o1', templateId: 'line-static', roles: ['main'], archiveName: 'a.zip' },
-      { id: 'o2', templateId: 'line-b', roles: ['main'], archiveName: 'b.zip' },
-    ] };
-    expect(validateBundleTemplate(bundle, tm)).toEqual([]);
-    let p = newProject({ kind: 'bundle', bundleId: 'b' });
-    const a = await assetFrom(new Uint8Array([1]), 'main.png');
-    p.assets.push(a);
-    p = addRef(p, a.id, 'line-static', 'main');
-    const ev = evaluateProject(p, tm, new Map([['b', bundle]]));
-    expect(ev.scopes[0].entries.length).toBe(1);
-    expect(ev.scopes[1].entries.length).toBe(0);
-  });
-});
-
 describe('テンプレート', () => {
-  it('複製は自作扱い・JSON往復で同一', () => {
-    const c = cloneCheckTemplate(line, new Set(['line-static']));
-    expect(c.id).toBe('line-static-copy');
-    expect(c.sourceType).toBe('user-workflow');
-    const r = parseTemplateJson(templateToJson(c));
-    expect(r.ok && r.value).toEqual(c);
-    expect(line.sourceType).toBe('official-derived'); // 元は変わらない
-  });
-  it('不正な役割を詳細に指摘', () => {
-    const bad = JSON.parse(templateToJson(line));
+  it('同梱LINEテンプレートは検証済み、不正な内容は詳しく指摘', () => {
+    expect(validateCheckTemplate(LINE_TEMPLATE)).toEqual([]);
+    const bad = JSON.parse(JSON.stringify(LINE_TEMPLATE));
     bad.roles[0].count = { min: 5, max: 2 };
-    bad.roles[0].directory = '../x';
     bad.roles.push({ ...bad.roles[1] });
-    const r = parseTemplateJson(JSON.stringify(bad));
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.errors.join('\n')).toMatch(/max が min より小さい/);
-      expect(r.errors.join('\n')).toMatch(/\.\./);
-      expect(r.errors.join('\n')).toMatch(/重複/);
-    }
+    const e = validateCheckTemplate(bad).join('\n');
+    expect(e).toMatch(/max が min より小さい/);
+    expect(e).toMatch(/重複/);
   });
   it('命名パターン', () => {
     expect(renderName('{index:02}.png', { index: 3, container: 'png', originalName: 'x.png' })).toBe('03.png');
-    expect(renderName('cover.{ext}', { index: 1, container: 'jpeg', originalName: 'x.png' })).toBe('cover.jpg');
     expect(patternToRegex('{index:02}.png')!.exec('16.PNG')![1]).toBe('16');
-    expect(patternToRegex('{original}')).toBeNull();
+    expect(patternToRegex('main.png')!.test('MAIN.png')).toBe(true);
   });
 });
 
 describe('バックアップ', () => {
-  it('素材・役割・順序・設定・自作テンプレートを復元しSHA-256を検証', async () => {
+  it('素材・役割・順序・設定・検査結果を復元しSHA-256を検証', async () => {
     let p = newProject();
     p.name = '年末年始マーモット';
     p.settings.stickerCounts['line-static'] = 24;
@@ -401,8 +340,7 @@ describe('バックアップ', () => {
     p.assets.push(a);
     p.facts[a.id] = await factsFor(bytes, a.originalName);
     p = addRef(p, a.id, 'line-static', 'sticker');
-    const c = cloneCheckTemplate(line, new Set(['line-static']));
-    const blob = await buildBackup(p, [c], []);
+    const blob = await buildBackup(p);
     const r = await restoreBackup(new Uint8Array(await blob.arrayBuffer()));
     expect(r.warnings).toEqual([]);
     expect(r.project.name).toBe('年末年始マーモット');
@@ -410,8 +348,13 @@ describe('バックアップ', () => {
     expect(r.project.assets[0].id).toBe(a.id);
     expect(r.project.assets[0].sha256).toBe(a.sha256);
     expect(r.project.refs).toEqual(p.refs);
-    expect(r.checkTemplates[0]).toEqual(c);
     expect(r.project.facts[a.id].sha256).toBe(a.sha256);
+  });
+  it('以前の版の組合せセット設定はLINEに戻して復元', async () => {
+    const p = { ...newProject(), target: { kind: 'bundle', bundleId: 'sale-and-promotion' } } as unknown as Project;
+    const r = await restoreBackup(new Uint8Array(await (await buildBackup(p)).arrayBuffer()));
+    expect(r.project.target).toEqual({ kind: 'template', templateId: 'line-static' });
+    expect(r.warnings.join()).toContain('LINE通常静止画に置き換えました');
   });
   it('投稿用ZIPをバックアップとして読むと案内付きで拒否', async () => {
     await expect(restoreBackup(readFix('valid-line-16.zip'))).rejects.toThrow(/バックアップZIPではありません/);

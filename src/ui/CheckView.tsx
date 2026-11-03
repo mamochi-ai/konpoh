@@ -1,64 +1,27 @@
-import { bundlesMap, evaluation, roleOps, setAlphaThreshold, setState, setStickerCount, setTarget, templatesMap, useApp, renameProject } from '../app/store';
+import { evaluation, roleOps, setAlphaThreshold, setState, setStickerCount, useApp, renameProject } from '../app/store';
 import type { RoleEval, ScopeEval } from '../core/rules';
 import type { AssetRecord } from '../core/types';
-import { BUILTIN_BUNDLES, BUILTIN_CHECK_TEMPLATES, stickerCountFor } from '../core/templates';
+import { LINE_TEMPLATE, stickerCountFor } from '../core/templates';
 import { FindingList, Mascot, StatusIcon, StatusPill, STATUS_LABEL } from './common';
-import { IconSettings } from './icons';
 import { DetailPanel } from './DetailPanel';
 
 export function TargetSettings() {
   const s = useApp();
-  const tmap = templatesMap(s);
-  const bmap = bundlesMap(s);
-  const target = s.project.target;
-  const value = target.kind === 'template' ? `t:${target.templateId}` : `b:${target.bundleId}`;
-  const usedTemplates =
-    target.kind === 'template'
-      ? [tmap.get(target.templateId)].filter(Boolean)
-      : [...new Set(bmap.get(target.bundleId)?.outputs.map((o) => o.templateId) ?? [])].map((id) => tmap.get(id)).filter(Boolean);
+  const t = LINE_TEMPLATE;
   return (
     <section class="card settings" aria-label="チェックの設定">
       <div class="field">
-        <label for="target-select">チェックテンプレート</label>
-        <select
-          id="target-select"
-          value={value}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            setTarget(v.startsWith('t:') ? { kind: 'template', templateId: v.slice(2) } : { kind: 'bundle', bundleId: v.slice(2) });
-          }}
-        >
-          <optgroup label="チェックテンプレート（標準）">
-            {BUILTIN_CHECK_TEMPLATES.map((t) => (
-              <option value={`t:${t.id}`}>{t.name}</option>
-            ))}
-          </optgroup>
-          {s.userTemplates.length > 0 && (
-            <optgroup label="自作テンプレート">
-              {s.userTemplates.map((t) => (
-                <option value={`t:${t.id}`}>{t.name}</option>
-              ))}
-            </optgroup>
-          )}
-          <optgroup label="組合せセット">
-            {[...BUILTIN_BUNDLES, ...s.userBundles].map((b) => (
-              <option value={`b:${b.id}`}>{b.name}</option>
-            ))}
-          </optgroup>
+        <span>チェックする規格</span>
+        <strong class="target-name">{t.name}</strong>
+      </div>
+      <div class="field">
+        <label for={`count-${t.id}`}>スタンプ数</label>
+        <select id={`count-${t.id}`} value={String(stickerCountFor(t, s.project.settings.stickerCounts))} onChange={(e) => setStickerCount(t.id, Number(e.currentTarget.value))}>
+          {(t.allowedStickerCounts ?? []).map((n) => (
+            <option value={n}>{n}個</option>
+          ))}
         </select>
       </div>
-      {usedTemplates.map((t) =>
-        t!.allowedStickerCounts?.length ? (
-          <div class="field" key={t!.id}>
-            <label for={`count-${t!.id}`}>スタンプ数{usedTemplates.length > 1 ? `（${t!.name}）` : ''}</label>
-            <select id={`count-${t!.id}`} value={String(stickerCountFor(t!, s.project.settings.stickerCounts))} onChange={(e) => setStickerCount(t!.id, Number(e.currentTarget.value))}>
-              {t!.allowedStickerCounts.map((n) => (
-                <option value={n}>{n}個</option>
-              ))}
-            </select>
-          </div>
-        ) : null,
-      )}
       <div class="field">
         <label for="alpha-th">余白判定のalpha閾値</label>
         <select id="alpha-th" value={String(s.project.settings.alphaThreshold)} onChange={(e) => setAlphaThreshold(Number(e.currentTarget.value))}>
@@ -68,23 +31,15 @@ export function TargetSettings() {
         </select>
       </div>
       <div class="settings-actions">
-        <button class="btn btn-small" onClick={() => setState({ templateManager: { open: true, selectedId: target.kind === 'template' ? target.templateId : target.bundleId } })}>
-          <IconSettings size={18} /> ルールを編集
-        </button>
         <button class="btn btn-small" onClick={roleOps.suggest} disabled={!s.project.assets.length}>
           名前から役割候補
         </button>
       </div>
-      {usedTemplates.map((t) => (
-        <p class="tpl-note" key={`n-${t!.id}`}>
-          <span class={`src src-${t!.sourceType === 'official-derived' ? 'official' : 'user'}`}>{t!.sourceType === 'official-derived' ? '公式条件から作成' : '自作ルール'}</span>{' '}
-          {t!.name}
-          {t!.checkedOn ? `（${t!.checkedOn}確認）` : ''}
-          {t!.notice ? ` — ${t!.notice}` : ''}
-          {t!.byteConvention ? ` 容量換算：${t!.byteConvention}。公式ページは単位換算を明示していません。` : ''}
-        </p>
-      ))}
-      <p class="tpl-note muted">規格チェックの合格は、販売サイトの審査合格や著作権の保証ではありません。</p>
+      <p class="tpl-note">
+        <span class="src src-official">公式条件から作成</span> {t.checkedOn ? `${t.checkedOn}確認の` : ''}LINE Creators Market ガイドライン（通常の静止画スタンプ）に基づく条件です。
+        {t.byteConvention ? ` 容量換算：${t.byteConvention}。公式ページは単位換算を明示していません。` : ''}
+      </p>
+      <p class="tpl-note muted">規格チェックの合格は、LINEの審査合格や著作権の保証ではありません。</p>
     </section>
   );
 }

@@ -1,6 +1,6 @@
 // アプリ状態と操作。業務判定は core/ の純粋関数に任せる。
 import { useEffect, useState } from 'preact/hooks';
-import type { AssetFacts, AssetRecord, BundleTemplate, CheckTemplate, Project, ProjectTarget } from '../core/types';
+import type { AssetFacts, AssetRecord, CheckTemplate, Project } from '../core/types';
 import { APP_LIMITS, factsValid } from '../core/facts';
 import { sha256Hex } from '../core/hash';
 import { detectContainer, extFormat, IMAGE_LIKE_EXTS } from '../core/sniff';
@@ -21,7 +21,7 @@ import {
   suggestRoles,
 } from '../core/project';
 import { asciiFileName, evaluateProject, exportFileName, exportGate, resolveScopes, type Evaluation, type ExportMode } from '../core/rules';
-import { BUILTIN_BUNDLES, BUILTIN_CHECK_TEMPLATES, isBuiltin } from '../core/templates';
+import { LINE_TEMPLATE, LINE_TEMPLATE_ID } from '../core/templates';
 import { buildBackup, backupFileName, restoreBackup } from '../core/backup';
 import * as db from './db';
 import { analyzeAsset, makeThumbnail } from './imaging';
@@ -64,8 +64,6 @@ export interface Toast {
 export interface AppState {
   ready: boolean;
   project: Project;
-  userTemplates: CheckTemplate[];
-  userBundles: BundleTemplate[];
   thumbs: Record<string, { url: string | null; version: number }>;
   lastBackup: { blob: Blob; name: string; bytes: number } | null;
   confirm: ConfirmRequest | null;
@@ -79,7 +77,6 @@ export interface AppState {
   dirty: boolean;
   lastSavedAt: string | null;
   saveError: string | null;
-  templateManager: { open: boolean; selectedId: string | null };
   packResults: Record<string, PackResult>;
   packErrors: Record<string, { mode: ExportMode; message: string }>;
   acks: Record<string, boolean>;
@@ -90,8 +87,6 @@ export interface AppState {
 let state: AppState = {
   ready: false,
   project: newProject(),
-  userTemplates: [],
-  userBundles: [],
   thumbs: {},
   tab: 'check',
   selectedAssetId: null,
@@ -102,7 +97,6 @@ let state: AppState = {
   dirty: false,
   lastSavedAt: null,
   saveError: null,
-  templateManager: { open: false, selectedId: null },
   packResults: {},
   packErrors: {},
   acks: {},
@@ -136,17 +130,21 @@ export function useApp(): AppState {
   return state;
 }
 
-export function templatesMap(s: AppState = state): Map<string, CheckTemplate> {
-  return new Map([...BUILTIN_CHECK_TEMPLATES, ...s.userTemplates].map((t) => [t.id, t]));
+const TEMPLATES = new Map<string, CheckTemplate>([[LINE_TEMPLATE_ID, LINE_TEMPLATE]]);
+
+export function templatesMap(): Map<string, CheckTemplate> {
+  return TEMPLATES;
 }
-export function bundlesMap(s: AppState = state): Map<string, BundleTemplate> {
-  return new Map([...BUILTIN_BUNDLES, ...s.userBundles].map((t) => [t.id, t]));
+
+/** 以前の版で保存した作品（BOOTH・組合せセットを選んでいたもの）はLINE通常静止画に戻す */
+function normalizeProject(p: Project): Project {
+  return p.target?.kind === 'template' && p.target.templateId === LINE_TEMPLATE_ID ? p : { ...p, target: { kind: 'template', templateId: LINE_TEMPLATE_ID } };
 }
 
 export function evaluation(s: AppState = state): Evaluation {
-  const key = [s.project, s.userTemplates, s.userBundles];
+  const key = [s.project];
   if (evalCache && evalCache.key.every((k, i) => k === key[i])) return evalCache.value;
-  const value = evaluateProject(s.project, templatesMap(s), bundlesMap(s));
+  const value = evaluateProject(s.project, TEMPLATES);
   evalCache = { key, value };
   return value;
 }
@@ -253,11 +251,9 @@ export function answerConfirm(ok: boolean) {
 export async function init() {
   const patch: Partial<AppState> = { ready: true };
   try {
-    const [tpls, bundles, last] = await Promise.all([db.loadCheckTemplates(), db.loadBundleTemplates(), db.loadLastProject()]);
-    patch.userTemplates = tpls.filter((t) => !isBuiltin(t.id));
-    patch.userBundles = bundles.filter((t) => !isBuiltin(t.id));
+    const last = await db.loadLastProject();
     if (last) {
-      patch.project = last;
+      patch.project = normalizeProject(last);
       patch.lastSavedAt = last.updatedAt;
     }
   } catch (e) {
@@ -405,7 +401,7 @@ export async function importFiles(files: File[]) {
   }
   if (added.length) {
     updateProject((p) => addAssets(p, added));
-    const { scopes } = resolveScopes(state.project.target, templatesMap(), bundlesMap(), state.project.settings.stickerCounts);
+    const { scopes } = resolveScopes(state.project.target, TEMPLATES, state.project.settings.stickerCounts);
     const { project, added: n } = suggestRoles(state.project, scopes, added.map((a) => a.id));
     if (n) updateProject(() => project);
     toast(`${added.length}件を追加しました${n ? `。ファイル名から${n}件の役割候補を付けました（確定してください）` : ''}`, 'success');
@@ -505,17 +501,13 @@ export const roleOps = {
   confirmAll: () => updateProject(confirmSuggestions),
   clearSuggested: () => updateProject(clearSuggestions),
   suggest: () => {
-    const { scopes } = resolveScopes(state.project.target, templatesMap(), bundlesMap(), state.project.settings.stickerCounts);
+    const { scopes } = resolveScopes(state.project.target, TEMPLATES, state.project.settings.stickerCounts);
     const { project, added } = suggestRoles(state.project, scopes);
     updateProject(() => project);
     toast(added ? `${added}件の役割候補を付けました。確認して確定してください。` : '名前から推定できる候補はありませんでした');
   },
 };
 
-export function setTarget(target: ProjectTarget) {
-  updateProject((p) => ({ ...p, target, updatedAt: new Date().toISOString() }));
-  setState({ packResults: {}, packErrors: {}, acks: {} });
-}
 export function setStickerCount(templateId: string, n: number) {
   updateProject((p) => ({ ...p, settings: { ...p.settings, stickerCounts: { ...p.settings.stickerCounts, [templateId]: n } } }));
 }
@@ -639,7 +631,7 @@ export async function saveBackup() {
   const job = startJob('backup', 'バックアップZIPを作成中', state.project.assets.length + 1);
   try {
     let n = 0;
-    const blob = await buildBackup(state.project, state.userTemplates, state.userBundles, {
+    const blob = await buildBackup(state.project, {
       signal: job.controller.signal,
       onProgress: () => progress(job, ++n),
     });
@@ -660,27 +652,9 @@ export async function restoreFromBackup(file: File) {
   const job = startJob('restore', 'バックアップを復元中', 1);
   try {
     const r = await restoreBackup(new Uint8Array(await file.arrayBuffer()), job.controller.signal);
-    const userTemplates = [...state.userTemplates];
-    for (const t of r.checkTemplates) {
-      if (isBuiltin(t.id)) continue;
-      const i = userTemplates.findIndex((x) => x.id === t.id);
-      if (i >= 0) userTemplates[i] = t;
-      else userTemplates.push(t);
-      await db.putCheckTemplate(t);
-    }
-    const userBundles = [...state.userBundles];
-    for (const t of r.bundleTemplates) {
-      if (isBuiltin(t.id)) continue;
-      const i = userBundles.findIndex((x) => x.id === t.id);
-      if (i >= 0) userBundles[i] = t;
-      else userBundles.push(t);
-      await db.putBundleTemplate(t);
-    }
     Object.values(state.thumbs).forEach((t) => t.url && URL.revokeObjectURL(t.url));
     setState({
-      project: r.project,
-      userTemplates,
-      userBundles,
+      project: normalizeProject(r.project),
       thumbs: {},
       selectedAssetId: null,
       packResults: {},
@@ -696,66 +670,6 @@ export async function restoreFromBackup(file: File) {
   } finally {
     endJob(job);
   }
-}
-
-// ---------------------------------------------------------------- テンプレート保存
-
-export async function saveUserTemplate(t: CheckTemplate): Promise<boolean> {
-  if (isBuiltin(t.id)) {
-    toast('標準テンプレートは上書きできません。複製してから編集してください。', 'error');
-    return false;
-  }
-  try {
-    await db.putCheckTemplate(t);
-  } catch (e) {
-    toast(`テンプレートを保存できませんでした: ${(e as Error).message}`, 'error');
-    return false;
-  }
-  setState((s) => {
-    const list = s.userTemplates.some((x) => x.id === t.id) ? s.userTemplates.map((x) => (x.id === t.id ? t : x)) : [...s.userTemplates, t];
-    return { userTemplates: list };
-  });
-  return true;
-}
-
-export async function removeUserTemplate(id: string): Promise<void> {
-  try {
-    await db.deleteCheckTemplate(id);
-    setState((s) => ({ userTemplates: s.userTemplates.filter((x) => x.id !== id) }));
-  } catch (e) {
-    toast(`削除できませんでした: ${(e as Error).message}`, 'error');
-  }
-}
-
-export async function saveUserBundle(t: BundleTemplate): Promise<boolean> {
-  if (isBuiltin(t.id)) {
-    toast('標準の組合せセットは上書きできません。複製してから編集してください。', 'error');
-    return false;
-  }
-  try {
-    await db.putBundleTemplate(t);
-  } catch (e) {
-    toast(`組合せセットを保存できませんでした: ${(e as Error).message}`, 'error');
-    return false;
-  }
-  setState((s) => {
-    const list = s.userBundles.some((x) => x.id === t.id) ? s.userBundles.map((x) => (x.id === t.id ? t : x)) : [...s.userBundles, t];
-    return { userBundles: list };
-  });
-  return true;
-}
-
-export async function removeUserBundle(id: string): Promise<void> {
-  try {
-    await db.deleteBundleTemplate(id);
-    setState((s) => ({ userBundles: s.userBundles.filter((x) => x.id !== id) }));
-  } catch (e) {
-    toast(`削除できませんでした: ${(e as Error).message}`, 'error');
-  }
-}
-
-export function downloadText(text: string, fileName: string, key: string) {
-  saveFile(new Blob([text], { type: 'application/json' }), fileName, key);
 }
 
 // ---------------------------------------------------------------- 編集結果（派生画像）の追加

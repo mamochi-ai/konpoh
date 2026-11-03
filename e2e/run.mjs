@@ -293,67 +293,24 @@ await step('generated/：odd-size・no-dpi・empty・broken・APNG・偽JPEG・�
   await page.getByRole('tab', { name: /チェック/ }).click();
 });
 
-await step('bad-template.json：未対応schemaVersionを明示して拒否', async () => {
-  await page.getByRole('button', { name: /ルールを編集/ }).click();
-  await page.setInputFiles('[data-testid=input-template-json]', join(FIX, 'bad-template.json'));
-  await page.waitForSelector('.toast-error');
-  const t = await page.textContent('.toast-error');
-  assert(t.includes('schemaVersion 999 は未対応'), t);
-});
-
-await step('自作テンプレート：標準を複製→編集→保存→JSON書出し→再読込', async () => {
-  await page.locator('.tm-item', { hasText: 'BOOTH向け' }).click();
-  await page.getByRole('button', { name: '複製して編集' }).click();
-  await page.waitForSelector('.tm-item.on >> text=自作');
-  await page.locator('.editor label:has-text("名前") input').first().fill('マイBOOTH表紙ルール');
-  // 表紙の寸法を 1000×1000 に
-  const cover = page.locator('fieldset.role-form').nth(1);
-  await cover.locator('label:has-text("幅 px") input').fill('1000');
-  await cover.locator('label:has-text("高さ px") input').fill('1000');
-  await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
-  await page.waitForSelector('.toast-success >> text=テンプレートを保存しました');
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /JSON書出し/ }).click()]);
-  const p = join(OUT, 'my-template.json');
-  await dl.saveAs(p);
-  const j = JSON.parse(readFileSync(p, 'utf8'));
-  assert(j.schemaVersion === 1 && j.kind === 'check-template' && j.name === 'マイBOOTH表紙ルール' && j.roles[1].dimensions.width === 1000, 'JSON内容');
-  assert(j.sourceType === 'user-workflow', '自作扱い');
-  await page.setInputFiles('[data-testid=input-template-json]', p);
-  await page.waitForSelector('.toast >> text=として取り込みました');
-  assert((await page.locator('.tm-item', { hasText: 'マイBOOTH表紙ルール' }).count()) === 2, '再読込で別IDの2件目');
-  // 標準は上書きできない
-  await page.locator('.tm-item', { hasText: 'LINE通常静止画' }).click();
-  assert(await page.locator('.editor fieldset.form').first().locator('input').first().isDisabled(), '標準は編集不可');
-  await page.screenshot({ path: join(OUT, '1024-template-manager.png') });
-  await page.getByRole('button', { name: '閉じる', exact: true }).click();
-});
-
-await step('組合せセット：LINE投稿＋宣伝表紙を別ZIPで。product不足は検査しない', async () => {
-  await newProject(page);
-  await page.selectOption('#target-select', { label: 'スタンプ投稿＋宣伝画像' });
-  await loadZip(page, join(FIX, 'valid-line-16.zip'));
-  await page.getByRole('button', { name: '候補を確定' }).click();
-  // main.png を表紙にも使う
-  await (await card(page, 'main')).click();
-  await page.locator('.add-role select').selectOption({ label: 'BOOTH向け画像素材集（自主ルール）／表紙' });
-  await page.getByRole('button', { name: '追加', exact: true }).click();
-  await runCheck(page);
-  const t = await page.textContent('.main-col');
-  assert(t.includes('line-upload.zip') && t.includes('promotion.zip'), '2出力');
-  assert(!t.includes('商品画像'), 'product役割は対象外');
-  const d = await page.textContent('.detail');
-  assert(d.includes('1200 × 1200 px（一致）') && d.includes('自作ルール'), '表紙の自作ルール指摘');
-  await page.getByRole('button', { name: '詳細を閉じる' }).click();
-  await page.getByRole('tab', { name: /梱包/ }).click();
-  const cards = await page.$$eval('.pack-card h2', (els) => els.map((e) => e.textContent));
-  assert(JSON.stringify(cards) === JSON.stringify(['line-upload.zip', 'promotion.zip']), cards.join(','));
-  const promoTree = await page.locator('.pack-card').nth(1).locator('.tree').textContent();
-  assert(promoTree.includes('promotion/') && promoTree.includes('cover.png'), promoTree);
-  await page.screenshot({ path: join(OUT, '1024-bundle-pack.png'), fullPage: true });
+await step('LINE専用：テンプレート選択・ルール編集・BOOTH・組合せセットの画面がない', async () => {
   await page.getByRole('tab', { name: /チェック/ }).click();
+  const t = await page.textContent('.settings');
+  assert(t.includes('LINE通常静止画スタンプ'), '規格名');
+  assert((await page.locator('#target-select').count()) === 0, 'テンプレート選択なし');
+  assert((await page.getByRole('button', { name: /ルールを編集/ }).count()) === 0, 'ルール編集なし');
+  const body = await page.textContent('body');
+  assert(!/BOOTH|組合せセット|自作テンプレート/.test(body), 'BOOTH等の表示なし');
+  const opts = await page.$$eval('#count-line-static option', (os) => os.map((o) => o.value));
+  assert(JSON.stringify(opts) === JSON.stringify(['8', '16', '24', '32', '40']), opts.join(','));
 });
 
 await step('バックアップZIP保存→新規→復元（素材・役割・設定を維持）', async () => {
+  await newProject(page);
+  await page.selectOption('#count-line-static', '24');
+  await loadZip(page, join(FIX, 'valid-line-16.zip'));
+  await page.getByRole('button', { name: '候補を確定' }).click();
+  await runCheck(page);
   await page.getByRole('tab', { name: /梱包/ }).click();
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'バックアップZIPを保存' }).click()]);
   assert(/^BACKUP_konpoh_\d{8}-\d{4}\.zip$/.test(dl.suggestedFilename()), dl.suggestedFilename());
@@ -365,12 +322,12 @@ await step('バックアップZIP保存→新規→復元（素材・役割・�
   await page.setInputFiles('[data-testid=input-restore]', p);
   await page.waitForSelector('.toast >> text=バックアップを復元しました');
   await page.getByRole('tab', { name: /チェック/ }).click();
-  const v = await page.$eval('#target-select', (e) => e.value);
-  assert(v === 'b:sale-and-promotion', v);
+  const v = await page.$eval('#count-line-static', (e) => e.value);
+  assert(v === '24', `スタンプ数の設定: ${v}`);
   const c = await counts(page);
   assert(c[3] === 0, `検査結果も復元: ${c}`);
   const t = await page.textContent('.main-col');
-  assert(t.includes('16/16') && t.includes('promotion.zip'), '役割復元');
+  assert(t.includes('16/24') && t.includes('スタンプが8枚不足'), '役割と設定の復元');
 });
 
 await step('端末内保存（IndexedDB）→再読込で復元', async () => {
@@ -499,10 +456,6 @@ for (const vp of [
     await p2.waitForSelector('.split-overlay');
     await noHScroll(p2, `${vp.name} edit`);
     await p2.screenshot({ path: join(OUT, `${vp.name}-edit.png`), fullPage: true });
-    await p2.getByRole('tab', { name: /チェック/ }).click();
-    await p2.getByRole('button', { name: /ルールを編集/ }).click();
-    await noHScroll(p2, `${vp.name} templates`);
-    await p2.screenshot({ path: join(OUT, `${vp.name}-templates.png`) });
     await c2.close();
   });
 }

@@ -42,7 +42,7 @@ export function DetailPanel() {
   const ae = ev.assets[asset.id];
   const facts = s.project.facts[asset.id];
   const f = factsValid(facts, asset.sha256, s.project.settings.alphaThreshold) ? facts : undefined;
-  const tmap = templatesMap(s);
+  const tmap = templatesMap();
   const scopeTemplates = new Map(ev.scopes.map((se) => [se.scope.template.id, se.scope]));
   const myRefs = s.project.refs.filter((r) => r.assetId === asset.id);
   const roleOptions = ev.scopes.flatMap((se) =>

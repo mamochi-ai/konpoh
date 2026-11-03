@@ -4,7 +4,6 @@ import { IconBox, IconClose, IconImage, IconLock, IconSave, IconZip, IconArrowRi
 import { CheckView } from './CheckView';
 import { PackView } from './PackView';
 import { EditView } from './EditView';
-import { TemplateManager } from './TemplateManager';
 import { runCheck } from '../app/store';
 
 const TABS: { id: Tab; label: string }[] = [
@@ -23,12 +22,11 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (s.confirm) answerConfirm(false);
-      else if (s.templateManager.open) setState({ templateManager: { open: false, selectedId: null } });
       else if (s.selectedAssetId) setState({ selectedAssetId: null });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [s.templateManager.open, s.selectedAssetId, s.confirm]);
+  }, [s.selectedAssetId, s.confirm]);
 
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
@@ -179,7 +177,6 @@ export function App() {
         ))}
       </div>
 
-      {s.templateManager.open && <TemplateManager />}
 
       {s.confirm && (
         <div class="modal-backdrop confirm-backdrop">

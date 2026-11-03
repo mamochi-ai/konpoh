@@ -1,7 +1,7 @@
 // プロジェクトバックアップZIP（投稿用ZIPとは別の種類・別の名前）
-import type { AssetRecord, BundleTemplate, CheckTemplate, Project } from './types';
+import type { AssetRecord, Project } from './types';
 import { buildZip, readZip, ZipError, type BuildZipOptions } from './zip';
-import { validateBundleTemplate, validateCheckTemplate } from './templates';
+import { LINE_TEMPLATE_ID } from './templates';
 import { sha256Hex } from './hash';
 
 export const BACKUP_MANIFEST = 'konpoh-backup.json';
@@ -14,8 +14,6 @@ export interface BackupManifest {
   project: Omit<Project, 'assets'> & {
     assets: { id: string; originalName: string; sourcePath: string; size: number; sha256: string; version: number; addedAt: string; replacedNames?: string[]; derivedFrom?: AssetRecord['derivedFrom']; file: string; type: string }[];
   };
-  checkTemplates: CheckTemplate[];
-  bundleTemplates: BundleTemplate[];
 }
 
 function safeSegment(name: string): string {
@@ -29,12 +27,7 @@ export function backupFileName(_p: Project, d = new Date()): string {
   return `BACKUP_konpoh_${stamp}.zip`;
 }
 
-export async function buildBackup(
-  p: Project,
-  checkTemplates: CheckTemplate[],
-  bundleTemplates: BundleTemplate[],
-  opts: BuildZipOptions = {},
-): Promise<Blob> {
+export async function buildBackup(p: Project, opts: BuildZipOptions = {}): Promise<Blob> {
   const assets = p.assets.map((a) => ({
     id: a.id,
     originalName: a.originalName,
@@ -53,8 +46,6 @@ export async function buildBackup(
     kind: BACKUP_KIND,
     createdAt: new Date().toISOString(),
     project: { ...p, assets },
-    checkTemplates,
-    bundleTemplates,
   };
   const json = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
   return buildZip(
@@ -72,8 +63,6 @@ export async function buildBackup(
 
 export interface RestoredBackup {
   project: Project;
-  checkTemplates: CheckTemplate[];
-  bundleTemplates: BundleTemplate[];
   warnings: string[];
 }
 
@@ -117,22 +106,15 @@ export async function restoreBackup(bytes: Uint8Array, signal?: AbortSignal): Pr
     });
   }
   const ids = new Set(assets.map((a) => a.id));
-  const checkTemplates = (m.checkTemplates ?? []).filter((t) => {
-    const e = validateCheckTemplate(t);
-    if (e.length) warnings.push(`テンプレート「${t?.name ?? '?'}」を復元できません: ${e[0]}`);
-    return !e.length;
-  });
-  const bundleTemplates = (m.bundleTemplates ?? []).filter((t) => {
-    const e = validateBundleTemplate(t);
-    if (e.length) warnings.push(`組合せセット「${t?.name ?? '?'}」を復元できません: ${e[0]}`);
-    return !e.length;
-  });
   for (const s of zip.skipped) warnings.push(`${s.path}: ${s.reason}`);
+  // 以前の版のBOOTH/組合せセットなどの選択は、LINE通常静止画に戻す
   const project: Project = {
     ...m.project,
+    target: { kind: 'template', templateId: LINE_TEMPLATE_ID },
     assets,
     refs: (m.project.refs ?? []).filter((r) => ids.has(r.assetId)),
     facts: Object.fromEntries(Object.entries(m.project.facts ?? {}).filter(([id]) => ids.has(id))),
   };
-  return { project, checkTemplates, bundleTemplates, warnings };
+  if (m.project.target?.templateId !== LINE_TEMPLATE_ID) warnings.push('LINEスタンプ以外のテンプレート設定は、LINE通常静止画に置き換えました');
+  return { project, warnings };
 }

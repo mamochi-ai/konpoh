@@ -1,9 +1,9 @@
 // 端末内保存（IndexedDB）。保存失敗は呼び出し側に例外として返す（握りつぶさない）
-import type { BundleTemplate, CheckTemplate, Project } from '../core/types';
+import type { Project } from '../core/types';
 
 const DB_NAME = 'konpoh';
 const DB_VERSION = 1;
-// チェックテンプレートと組合せセットは別ストア。将来の編集テンプレートはここに混ぜず別ストアを追加する。
+// 以前の版で作ったテンプレート用ストアは互換のため残す（現在は使わない）
 const STORES = ['projects', 'checkTemplates', 'bundleTemplates', 'meta'] as const;
 type StoreName = (typeof STORES)[number];
 
@@ -54,26 +54,6 @@ export async function loadLastProject(): Promise<Project | null> {
   if (!id) return null;
   const p = await tx<Project>('projects', 'readonly', (s) => s.get(id) as IDBRequest<Project>);
   return p ?? null;
-}
-
-async function getAll<T>(store: StoreName): Promise<T[]> {
-  return (await tx<T[]>(store, 'readonly', (s) => s.getAll() as IDBRequest<T[]>)) ?? [];
-}
-
-export const loadCheckTemplates = () => getAll<CheckTemplate>('checkTemplates');
-export const loadBundleTemplates = () => getAll<BundleTemplate>('bundleTemplates');
-
-export async function putCheckTemplate(t: CheckTemplate): Promise<void> {
-  await tx('checkTemplates', 'readwrite', (s) => s.put(t, t.id));
-}
-export async function deleteCheckTemplate(id: string): Promise<void> {
-  await tx('checkTemplates', 'readwrite', (s) => s.delete(id));
-}
-export async function putBundleTemplate(t: BundleTemplate): Promise<void> {
-  await tx('bundleTemplates', 'readwrite', (s) => s.put(t, t.id));
-}
-export async function deleteBundleTemplate(id: string): Promise<void> {
-  await tx('bundleTemplates', 'readwrite', (s) => s.delete(id));
 }
 
 export async function requestPersistence(): Promise<boolean | null> {

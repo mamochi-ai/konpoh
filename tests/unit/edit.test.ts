@@ -16,9 +16,9 @@ import {
 } from '../../src/core/edit/raster';
 import { encodePng } from '../../src/core/edit/png';
 import { evaluateRole } from '../../src/core/rules';
-import { BUILTIN_CHECK_TEMPLATES } from '../../src/core/templates';
+import { LINE_TEMPLATE } from '../../src/core/templates';
 
-const line = BUILTIN_CHECK_TEMPLATES[0];
+const line = LINE_TEMPLATE;
 const sticker = line.roles[0];
 const preset = SIZE_PRESETS.find((p) => p.id === 'line-sticker')!;
 

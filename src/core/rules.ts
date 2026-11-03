@@ -2,7 +2,6 @@
 import type {
   AssetFacts,
   AssetRecord,
-  BundleTemplate,
   CheckRole,
   CheckTemplate,
   Finding,
@@ -274,41 +273,14 @@ export interface Scope {
 export function resolveScopes(
   target: ProjectTarget,
   templates: Map<string, CheckTemplate>,
-  bundles: Map<string, BundleTemplate>,
   stickerCounts: Record<string, number>,
 ): { scopes: Scope[]; errors: string[] } {
-  const errors: string[] = [];
-  const scopes: Scope[] = [];
-  if (target.kind === 'template') {
-    const t = templates.get(target.templateId);
-    if (!t) return { scopes, errors: [`テンプレート "${target.templateId}" が見つかりません`] };
-    scopes.push({
-      id: t.id,
-      label: t.name,
-      template: t,
-      roles: effectiveRoles(t, stickerCountFor(t, stickerCounts)),
-      archiveName: `${t.id}.zip`,
-    });
-    return { scopes, errors };
-  }
-  const b = bundles.get(target.bundleId);
-  if (!b) return { scopes, errors: [`組合せセット "${target.bundleId}" が見つかりません`] };
-  for (const out of b.outputs) {
-    const t = templates.get(out.templateId);
-    if (!t) {
-      errors.push(`出力 "${out.id}" のテンプレート "${out.templateId}" が見つかりません`);
-      continue;
-    }
-    const roles = effectiveRoles(t, stickerCountFor(t, stickerCounts));
-    const selected: CheckRole[] = [];
-    for (const r of out.roles) {
-      const role = roles.find((x) => x.id === r);
-      if (!role) errors.push(`出力 "${out.id}": テンプレート "${t.name}" に役割 "${r}" がありません`);
-      else selected.push(role);
-    }
-    scopes.push({ id: out.id, label: `${out.archiveName}（${t.name}）`, template: t, roles: selected, archiveName: out.archiveName });
-  }
-  return { scopes, errors };
+  const t = templates.get(target.templateId);
+  if (!t) return { scopes: [], errors: [`テンプレート "${target.templateId}" が見つかりません`] };
+  return {
+    scopes: [{ id: t.id, label: t.name, template: t, roles: effectiveRoles(t, stickerCountFor(t, stickerCounts)), archiveName: `${t.id}.zip` }],
+    errors: [],
+  };
 }
 
 /** 役割参照のキー（テンプレートIDで名前空間を分ける） */
@@ -380,12 +352,8 @@ function dedupe(findings: Finding[]): Finding[] {
   });
 }
 
-export function evaluateProject(
-  project: Project,
-  templates: Map<string, CheckTemplate>,
-  bundles: Map<string, BundleTemplate>,
-): Evaluation {
-  const { scopes, errors: scopeErrors } = resolveScopes(project.target, templates, bundles, project.settings.stickerCounts);
+export function evaluateProject(project: Project, templates: Map<string, CheckTemplate>): Evaluation {
+  const { scopes, errors: scopeErrors } = resolveScopes(project.target, templates, project.settings.stickerCounts);
   const assetById = new Map(project.assets.map((a) => [a.id, a]));
   const th = project.settings.alphaThreshold;
   const validFacts = (a: AssetRecord) => {

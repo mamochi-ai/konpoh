@@ -15,7 +15,7 @@ export type Container =
   | 'pdf'
   | 'unknown';
 
-/** チェックテンプレート（編集テンプレートとは別の型・別の保存領域） */
+/** チェックテンプレート（同梱のLINE通常静止画。利用者による作成・編集はしない） */
 export interface CheckRole {
   id: string;
   label?: string;
@@ -52,25 +52,6 @@ export interface CheckTemplate {
   roles: CheckRole[];
 }
 
-export interface BundleOutput {
-  id: string;
-  templateId: string;
-  roles: string[];
-  archiveName: string;
-}
-
-export interface BundleTemplate {
-  schemaVersion: 1;
-  kind: 'bundle-template';
-  id: string;
-  name: string;
-  templates: string[];
-  outputs: BundleOutput[];
-  note?: string;
-}
-
-export type AnyTemplate = CheckTemplate | BundleTemplate;
-
 /** 素材（元ファイル）。チェックでは中身を変更しない */
 export interface AssetRecord {
   id: string;
@@ -97,9 +78,8 @@ export interface RoleRef {
   suggested?: boolean;
 }
 
-export type ProjectTarget =
-  | { kind: 'template'; templateId: string }
-  | { kind: 'bundle'; bundleId: string };
+/** 検査対象のテンプレート（現在はLINE通常静止画のみ） */
+export type ProjectTarget = { kind: 'template'; templateId: string };
 
 export interface ProjectSettings {
   stickerCounts: Record<string, number>;

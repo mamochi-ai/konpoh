@@ -2,12 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import { assetFrom, factsFor, loadZipFixture, readFix } from '../helpers/fixtures';
 import { evaluateProject, exportGate, resolveScopes } from '../../src/core/rules';
-import { BUILTIN_BUNDLES, BUILTIN_CHECK_TEMPLATES, parseTemplateJson } from '../../src/core/templates';
+import { LINE_TEMPLATE, validateCheckTemplate } from '../../src/core/templates';
 import { confirmSuggestions, newProject, suggestRoles } from '../../src/core/project';
 import type { Project } from '../../src/core/types';
 
-const tmap = new Map(BUILTIN_CHECK_TEMPLATES.map((t) => [t.id, t]));
-const bmap = new Map(BUILTIN_BUNDLES.map((b) => [b.id, b]));
+const tmap = new Map([[LINE_TEMPLATE.id, LINE_TEMPLATE]]);
 
 async function projectFromZip(zipName: string, opts: { check?: boolean } = {}): Promise<Project> {
   const zip = await loadZipFixture(zipName);
@@ -18,7 +17,7 @@ async function projectFromZip(zipName: string, opts: { check?: boolean } = {}): 
     p.assets.push(a);
     if (opts.check !== false) p.facts[a.id] = await factsFor(f.data, f.name);
   }
-  const { scopes } = resolveScopes(p.target, tmap, bmap, p.settings.stickerCounts);
+  const { scopes } = resolveScopes(p.target, tmap, p.settings.stickerCounts);
   p = confirmSuggestions(suggestRoles(p, scopes).project);
   return p;
 }
@@ -29,7 +28,7 @@ const byName = (p: Project, ev: ReturnType<typeof evaluateProject>, name: string
 describe('valid-line-16.zip', () => {
   it('スタンプ16・main1・tab1で、寸法/形式/容量/透過/偶数/DPIにエラーなし', async () => {
     const p = await projectFromZip('valid-line-16.zip');
-    const ev = evaluateProject(p, tmap, bmap);
+    const ev = evaluateProject(p, tmap);
     const s = ev.scopes[0];
     expect(s.roles.map((r) => [r.role.id, r.refs.length])).toEqual([['sticker', 16], ['main', 1], ['tab', 1]]);
     expect(s.setFindings.filter((f) => f.severity === 'error')).toEqual([]);
@@ -59,7 +58,7 @@ describe('valid-line-16.zip', () => {
 describe('invalid-two-images.zip', () => {
   it('06.pngは幅400で上限370超過、12.pngは完全不透明。他にエラーなし', async () => {
     const p = await projectFromZip('invalid-two-images.zip');
-    const ev = evaluateProject(p, tmap, bmap);
+    const ev = evaluateProject(p, tmap);
     const f06 = byName(p, ev, '06.png');
     expect(f06.status).toBe('error');
     const dim = f06.findings.find((f) => f.code === 'dim-max')!;
@@ -80,7 +79,7 @@ describe('invalid-two-images.zip', () => {
 describe('missing-main-and-sticker.zip', () => {
   it('スタンプ1枚不足・main1枚不足、tabは存在', async () => {
     const p = await projectFromZip('missing-main-and-sticker.zip');
-    const ev = evaluateProject(p, tmap, bmap);
+    const ev = evaluateProject(p, tmap);
     const s = ev.scopes[0];
     const short = s.setFindings.filter((f) => f.code === 'count-short').map((f) => f.title).sort();
     expect(short).toEqual(['スタンプが1枚不足', 'メイン画像が1枚不足'].sort());
@@ -99,7 +98,7 @@ describe('generated/', () => {
     p.assets.push(a);
     p.facts[a.id] = await factsFor(bytes, file);
     p.refs.push({ id: 'r1', assetId: a.id, templateId: 'line-static', roleId: sticker.id, order: 1 });
-    return evaluateProject(p, tmap, bmap).assets[a.id];
+    return evaluateProject(p, tmap).assets[a.id];
   }
   it('odd-size: 寸法上限内だが奇数', async () => {
     const r = await evalSingle('odd-size.png');
@@ -129,8 +128,7 @@ describe('generated/', () => {
 
 describe('bad-template.json', () => {
   it('未対応schemaVersionを明示して拒否', () => {
-    const r = parseTemplateJson(new TextDecoder().decode(readFix('bad-template.json')));
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors[0]).toContain('schemaVersion 999 は未対応');
+    const e = validateCheckTemplate(JSON.parse(new TextDecoder().decode(readFix('bad-template.json'))));
+    expect(e[0]).toContain('schemaVersion 999 は未対応');
   });
 });
