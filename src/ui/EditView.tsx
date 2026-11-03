@@ -22,8 +22,119 @@ import { IconDownload, IconSwap } from './icons';
 
 const yieldTick = () => new Promise<void>((r) => setTimeout(r, 0));
 
+/** 新しく作る画像の名前の元。長い名前は前後を残して短くする */
 function stemOf(name: string): string {
-  return name.replace(/\.[^.]*$/, '') || 'image';
+  const stem = name.replace(/\.[^.]*$/, '') || 'image';
+  return stem.length > 20 ? `${stem.slice(0, 10)}-${stem.slice(-4)}` : stem;
+}
+
+/** 編集でできた画像の名前は、最初に読み込んだ画像の名前を元にする（短縮の重ねがけを避ける） */
+function baseStem(asset: AssetRecord, assets: AssetRecord[]): string {
+  let cur = asset;
+  for (let i = 0; i < 10 && cur.derivedFrom; i++) {
+    const parent = assets.find((a) => a.id === cur.derivedFrom!.assetId);
+    if (!parent) return stemOf(cur.derivedFrom.originalName);
+    cur = parent;
+  }
+  return stemOf(cur.originalName);
+}
+
+/** 表示用：長い名前は途中を省略（拡張子は残す） */
+export function shortName(name: string, max = 22): string {
+  if (name.length <= max) return name;
+  const m = /(\.[A-Za-z0-9]{1,5})$/.exec(name);
+  const ext = m ? m[1] : '';
+  const body = name.slice(0, name.length - ext.length);
+  const keep = Math.max(4, max - ext.length - 1);
+  const head = Math.ceil(keep * 0.6);
+  return `${body.slice(0, head)}…${body.slice(body.length - (keep - head))}${ext}`;
+}
+
+/** 編集対象の選択。読み込んだ画像と透過で作った画像を並べ、分割で作った画像は件数だけ示して折りたたむ */
+function AssetPicker({ selectedId }: { selectedId: string }) {
+  const s = useApp();
+  const [showPieces, setShowPieces] = useState(false);
+  const assets = s.project.assets;
+  const pieces = assets.filter((a) => a.derivedFrom?.op === 'split');
+  const piecesBySource = new Map<string, AssetRecord[]>();
+  for (const p of pieces) piecesBySource.set(p.derivedFrom!.assetId, [...(piecesBySource.get(p.derivedFrom!.assetId) ?? []), p]);
+  // 透過で作った画像は元画像のすぐ後ろに並べる
+  const main = assets.filter((a) => a.derivedFrom?.op !== 'split');
+  const ordered: AssetRecord[] = [];
+  const placed = new Set<string>();
+  const place = (a: AssetRecord) => {
+    if (placed.has(a.id)) return;
+    placed.add(a.id);
+    ordered.push(a);
+    for (const c of main) if (c.derivedFrom?.assetId === a.id) place(c);
+  };
+  for (const a of main) if (!a.derivedFrom || !main.some((x) => x.id === a.derivedFrom!.assetId)) place(a);
+  for (const a of main) place(a);
+
+  const Item = ({ a }: { a: AssetRecord }) => {
+    const on = a.id === selectedId;
+    const split = piecesBySource.get(a.id)?.length ?? 0;
+    const tag = a.derivedFrom?.op === 'background' ? '透過済み' : a.derivedFrom?.op === 'split' ? '分割' : '読込';
+    return (
+      <button
+        class={`pick-item ${on ? 'on' : ''}`}
+        aria-pressed={on}
+        title={a.originalName}
+        aria-label={`${a.originalName}（${tag}${split ? `、分割済み${split}枚` : ''}）を編集する`}
+        onClick={() => setEdit({ assetId: a.id })}
+      >
+        <span class="pick-thumb checker">{s.thumbs[a.id]?.url ? <img src={s.thumbs[a.id]!.url!} alt="" /> : null}</span>
+        <span class="pick-name">{shortName(a.originalName, 15)}</span>
+        <span class="pick-tags">
+          <span class={`pick-tag tag-${a.derivedFrom?.op ?? 'source'}`}>{tag}</span>
+          {split > 0 && <span class="pick-tag tag-count">分割済み {split}枚</span>}
+        </span>
+      </button>
+    );
+  };
+
+  const selected = assets.find((a) => a.id === selectedId);
+  return (
+    <div class="picker">
+      <div class="picker-head">
+        <span class="field-label" id="pick-label">
+          編集する画像
+        </span>
+        {pieces.length > 0 && (
+          <button class="btn btn-small" aria-expanded={showPieces} onClick={() => setShowPieces((v) => !v)}>
+            {showPieces ? '分割で作った画像を隠す' : `分割で作った画像も表示（${pieces.length}枚）`}
+          </button>
+        )}
+      </div>
+      <div class="pick-strip" role="group" aria-labelledby="pick-label">
+        {ordered.map((a) => (
+          <Item key={a.id} a={a} />
+        ))}
+      </div>
+      {showPieces &&
+        [...piecesBySource.entries()].map(([src, list]) => (
+          <div key={src} class="pick-group">
+            <span class="small muted">「{shortName(list[0].derivedFrom!.originalName, 28)}」から分割（{list.length}枚）</span>
+            <div class="pick-strip">
+              {list.map((a) => (
+                <Item key={a.id} a={a} />
+              ))}
+            </div>
+          </div>
+        ))}
+      {selected && (
+        <p class="small pick-selected">
+          選択中：<span class="break">{selected.originalName}</span>
+          {selected.derivedFrom && (
+            <span class="muted">
+              {' '}
+              ／「{shortName(selected.derivedFrom.originalName, 28)}」から{selected.derivedFrom.op === 'split' ? '分割' : '背景透過'}で作成
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function hex(c: Rgb): string {
@@ -132,7 +243,7 @@ function BackgroundTool({ asset, raster }: { asset: AssetRecord; raster: Raster 
       await yieldTick();
       const bytes = encodePng(result.raster);
       const detail = `背景色${hex(color)}・許容${tolerance}・${contiguous ? '外側からつながる部分' : '同じ色すべて'}${soften ? '・境界なめらか' : ''}`;
-      const ids = await addDerivedAssets(asset, [{ name: `${stemOf(asset.originalName)}-transparent.png`, bytes }], 'background', detail, { transferRoles: transfer });
+      const ids = await addDerivedAssets(asset, [{ name: `${baseStem(asset, s.project.assets)}-transparent.png`, bytes }], 'background', detail, { transferRoles: transfer });
       toast(`透過した画像を追加しました${transfer ? '（役割を引き継ぎました）' : ''}。元の画像はそのまま残っています。`, 'success');
       setEdit({ assetId: ids[0] });
     } finally {
@@ -327,7 +438,7 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
         await yieldTick();
         const piece = prepareCell(raster, mask, c, { trim, preset });
         if (!piece) continue;
-        items.push({ name: `${stemOf(asset.originalName)}-${String(k).padStart(2, '0')}.png`, bytes: encodePng(piece) });
+        items.push({ name: `${baseStem(asset, s.project.assets)}-${String(k).padStart(2, '0')}.png`, bytes: encodePng(piece) });
       }
       const [tid, rid] = assign ? assign.split('|') : [];
       const detail = `${rows}行×${cols}列から${items.length}枚・${preset.label}${trim ? '・余白を詰める' : ''}`;
@@ -503,7 +614,10 @@ export function EditView() {
   const s = useApp();
   const input = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState<string | null>(null);
-  const assetId = s.edit.assetId && s.project.assets.some((a) => a.id === s.edit.assetId) ? s.edit.assetId : (s.project.assets[0]?.id ?? null);
+  const assetId =
+    s.edit.assetId && s.project.assets.some((a) => a.id === s.edit.assetId)
+      ? s.edit.assetId
+      : (s.project.assets.find((a) => a.derivedFrom?.op !== 'split')?.id ?? s.project.assets[0]?.id ?? null);
   const asset = s.project.assets.find((a) => a.id === assetId);
   const [raster, setRaster] = useState<Raster | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -543,17 +657,7 @@ export function EditView() {
         ) : (
           <>
             <section class="card edit-picker" aria-label="編集する画像">
-              <div class="field">
-                <label for="edit-asset">編集する画像</label>
-                <select id="edit-asset" value={asset.id} onChange={(e) => setEdit({ assetId: e.currentTarget.value })}>
-                  {s.project.assets.map((a) => (
-                    <option value={a.id}>
-                      {a.originalName}
-                      {a.derivedFrom ? `（${a.derivedFrom.op === 'split' ? '分割' : '透過'}で作成）` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <AssetPicker selectedId={asset.id} />
               <div class="seg tool-switch" role="tablist" aria-label="編集の種類">
                 {(
                   [
@@ -566,11 +670,6 @@ export function EditView() {
                   </button>
                 ))}
               </div>
-              {asset.derivedFrom && (
-                <p class="small muted">
-                  「{asset.derivedFrom.originalName}」から{asset.derivedFrom.op === 'split' ? '分割' : '背景透過'}で作成：{asset.derivedFrom.detail}
-                </p>
-              )}
             </section>
 
             {loadErr && (
@@ -591,7 +690,9 @@ export function EditView() {
               {s.project.assets.map((a) => (
                 <li key={a.id}>
                   <span class="thumb-mini checker">{s.thumbs[a.id]?.url ? <img src={s.thumbs[a.id]!.url!} alt="" /> : null}</span>
-                  <span class="break edit-name">{a.originalName}</span>
+                  <span class="edit-name" title={a.originalName}>
+                    {shortName(a.originalName, 28)}
+                  </span>
                   <span class="edit-actions">
                     <button class="btn btn-small" onClick={() => exportOriginal(a.id)} aria-label={`${a.originalName} の元画像を書き出す`}>
                       <IconDownload size={18} /> 元画像を書き出す

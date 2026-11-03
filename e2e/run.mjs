@@ -351,8 +351,10 @@ await step('編集：元画像の書出しは原本とバイト一致', async ()
 
 await step('編集：白背景の一覧画像→背景透過→すき間で2×3を検出→LINE用に6枚切り出し→スタンプに割当・検査', async () => {
   await newProject(page);
-  await addImages(page, [join(FIX, 'sheet-white-2x3.png')]);
-  const sheetSha = sha(readFileSync(join(FIX, 'sheet-white-2x3.png')));
+  const longSheet = join(OUT, 'exec-2fa292d2-eb64-424b-8ed8-5f7947641f68.png');
+  writeFileSync(longSheet, readFileSync(join(FIX, 'sheet-white-2x3.png')));
+  await addImages(page, [longSheet]);
+  const sheetSha = sha(readFileSync(longSheet));
   await page.getByRole('tab', { name: /編集/ }).click();
   await page.waitForSelector('.split-overlay');
   const warn = await page.textContent('.tool');
@@ -366,8 +368,11 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   await page.waitForSelector('.toast-success >> text=透過した画像を追加しました');
   await idle(page);
   // 透過済み画像が選ばれ、分割へ
-  const selName = await page.$eval('#edit-asset', (e) => e.selectedOptions[0].textContent);
-  assert(selName.includes('sheet-white-2x3-transparent.png'), selName);
+  const selName = await page.textContent('.pick-selected');
+  assert(selName.includes('exec-2fa29-1f68-transparent.png'), selName);
+  const shown = await page.$$eval('.pick-item .pick-name', (els) => els.map((e) => e.textContent));
+  assert(shown.length === 2 && shown.every((t) => t.length <= 15 && t.includes('…')), `短縮表示: ${shown}`);
+  assert((await page.locator('.pick-item .tag-background').count()) === 1, '透過済みタグ');
   await page.getByRole('tab', { name: '一覧画像の分割' }).click();
   await page.waitForSelector('text=すき間から 2行 × 3列 を見つけました');
   assert((await page.locator('.split-line').count()) === 3, '分割線3本');
@@ -392,6 +397,13 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   await page.getByRole('button', { name: '6枚を切り出して追加' }).click();
   await page.waitForSelector('.toast-success >> text=6枚を切り出して追加しました');
   await idle(page);
+  // 分割で作った6枚は一覧に混ざらず、元画像に「分割済み 6枚」と出る。ボタンで表示できる
+  assert((await page.locator('.pick-item').count()) === 2, '分割画像は既定で非表示');
+  assert((await page.locator('.pick-item .tag-count', { hasText: '分割済み 6枚' }).count()) === 1, '分割済み件数');
+  await page.getByRole('button', { name: '分割で作った画像も表示（6枚）' }).click();
+  assert((await page.locator('.pick-group .pick-item').count()) === 6, '分割画像を表示');
+  await page.screenshot({ path: join(OUT, '1024-edit-picker.png') });
+  await page.getByRole('button', { name: '分割で作った画像を隠す' }).click();
   await page.getByRole('tab', { name: /チェック/ }).click();
   const heads = await page.$$eval('.role-head', (els) => els.map((e) => e.textContent));
   assert(heads.some((h) => h.includes('スタンプ') && h.includes('6/16')), heads.join('|'));
@@ -399,7 +411,7 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   for (let i = 1; i <= 6; i++) {
     await (await card(page, String(i).padStart(2, '0'))).click();
     const d = await page.textContent('.detail');
-    assert(d.includes(`sheet-white-2x3-transparent-0${i}.png`), `名前 ${i}`);
+    assert(d.includes(`exec-2fa29-1f68-0${i}.png`), `名前 ${i}`);
     assert(!d.includes('エラー'), `${i}枚目にエラー: ${d.slice(0, 300)}`);
     assert(d.includes('72.01'), `${i}枚目のDPI`);
     assert(d.includes('作成元'), '作成元表示');
@@ -408,7 +420,7 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   // 元の一覧画像は変わっていない（書出しで確認）
   await page.getByRole('tab', { name: /編集/ }).click();
   await page.locator('summary', { hasText: '元画像の書出し' }).click();
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^sheet-white-2x3\.png の元画像を書き出す/ }).click()]);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^exec-2fa292d2-eb64-424b-8ed8-5f7947641f68\.png の元画像を書き出す/ }).click()]);
   const p = join(OUT, 'sheet-orig.png');
   await dl.saveAs(p);
   assert(sha(readFileSync(p)) === sheetSha, '元の一覧画像はバイト一致');

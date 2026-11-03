@@ -1523,3 +1523,116 @@ input[type='range'] {
   display: flex;
   align-items: center;
 }
+
+/* ---------------------------------------------------------------- 編集する画像の選択 */
+.edit-picker {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  min-width: 0;
+}
+.edit-picker > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.field-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.pick-strip {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.pick-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px dashed var(--line-strong);
+  padding-top: 8px;
+}
+.pick-item {
+  flex: none;
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+  text-align: left;
+  scroll-snap-align: start;
+}
+.pick-item.on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.pick-thumb {
+  height: 84px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.pick-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.pick-name {
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pick-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pick-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.pick-tag.tag-background {
+  color: var(--pass);
+  border-color: #b5dad5;
+  background: var(--pass-soft);
+}
+.pick-tag.tag-count {
+  color: var(--warn-ink);
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+}
+.pick-selected {
+  margin: 0;
+}
+.edit-picker .tool-switch {
+  flex: none;
+}
