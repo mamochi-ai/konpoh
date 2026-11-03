@@ -7,6 +7,8 @@ import {
   backgroundMask,
   cellsFromLines,
   contentRect,
+  crossCount,
+  snapToGap,
   estimateBackground,
   findGapLines,
   gridLines,
@@ -450,6 +452,19 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
   };
 
   const selValue = sel ? (sel.axis === 'x' ? sortedXs : sortedYs)[sel.i] : null;
+  const selCross = sel && selValue !== null ? crossCount(mask, W, H, sel.axis, selValue) : 0;
+  const snapSel = () => {
+    if (!sel || selValue === null) return;
+    const list = sel.axis === 'x' ? sortedXs : sortedYs;
+    const lo = (sel.i > 0 ? list[sel.i - 1] : 0) + 1;
+    const hi = (sel.i < list.length - 1 ? list[sel.i + 1] : sel.axis === 'x' ? W : H) - 1;
+    const v = snapToGap(mask, W, H, sel.axis, selValue, Math.round((sel.axis === 'x' ? W : H) / 4), lo, hi);
+    if (v === null) setNote('近くにすき間が見つかりませんでした。絵どうしがくっついている場合は、ボタンで位置を合わせてください。');
+    else {
+      setLine(sel.axis, sel.i, v);
+      setNote(`${sel.axis === 'x' ? '縦' : '横'}の線${sel.i + 1}をすき間の真ん中（${v}px）に合わせました。`);
+    }
+  };
 
   return (
     <div class="tool">
@@ -494,6 +509,9 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
                 <strong>
                   {sel.axis === 'x' ? '縦' : '横'}の線 {sel.i + 1}：{selValue}px
                 </strong>
+                <span class={`cross-state ${selCross ? 'bad' : 'ok'}`}>
+                  {selCross ? `絵に${selCross.toLocaleString()}画素かかっています` : 'すき間の上です（絵を切りません）'}
+                </span>
                 <div class="row-wrap">
                   {[-10, -1, 1, 10].map((d) => (
                     <button key={d} class="btn btn-small" onClick={() => setLine(sel.axis, sel.i, selValue + d)} aria-label={`${Math.abs(d)}px ${d < 0 ? (sel.axis === 'x' ? '左' : '上') : sel.axis === 'x' ? '右' : '下'}へ`}>
@@ -501,13 +519,16 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
                       {Math.abs(d)}
                     </button>
                   ))}
+                  <button class="btn btn-small btn-primary" onClick={snapSel} disabled={selCross === 0}>
+                    すき間に合わせる
+                  </button>
                   <button class="btn btn-small btn-danger" onClick={removeLine}>
                     この線を消す
                   </button>
                 </div>
               </>
             ) : (
-              <span class="muted small">線をタップすると、ここで位置を細かく調整できます。</span>
+              <span class="muted small">線をタップすると、ここで位置を細かく調整できます。緑の線はすき間の上、赤い線は絵にかかっています。</span>
             )}
           </div>
           <label class="check">
@@ -583,9 +604,9 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
                   (axis === 'x' ? sortedXs : sortedYs).map((v, i) => (
                     <button
                       key={`${axis}${i}`}
-                      class={`split-line split-${axis} ${sel?.axis === axis && sel.i === i ? 'on' : ''}`}
+                      class={`split-line split-${axis} ${sel?.axis === axis && sel.i === i ? 'on' : ''} ${crossCount(mask, W, H, axis, v) ? 'crosses' : 'clear'}`}
                       style={axis === 'x' ? { left: `${(v / W) * 100}%` } : { top: `${(v / H) * 100}%` }}
-                      aria-label={`${axis === 'x' ? '縦' : '横'}の分割線${i + 1}（${v}px）。選んで位置を調整`}
+                      aria-label={`${axis === 'x' ? '縦' : '横'}の分割線${i + 1}（${v}px、${crossCount(mask, W, H, axis, v) ? '絵にかかっています' : 'すき間の上'}）。選んで位置を調整`}
                       onPointerDown={(e) => {
                         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                         drag.current = { axis, i };
@@ -596,6 +617,7 @@ function SplitTool({ asset, raster }: { asset: AssetRecord; raster: Raster }) {
                       onClick={() => setSel({ axis, i })}
                     >
                       <span class="split-line-bar" />
+                      <span class="split-grip" aria-hidden="true" />
                     </button>
                   )),
                 )}

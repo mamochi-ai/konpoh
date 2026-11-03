@@ -4,6 +4,8 @@ import { decodePngForTest, factsFor, loadZipFixture } from '../helpers/fixtures'
 import {
   backgroundMask,
   cellsFromLines,
+  crossCount,
+  snapToGap,
   estimateBackground,
   findGapLines,
   gridLines,
@@ -147,5 +149,24 @@ describe('PNGエンコード', () => {
     const o = downscale(r, 1, 1);
     expect(Array.from(o.data.subarray(0, 3))).toEqual([255, 0, 0]);
     expect(o.data[3]).toBe(128);
+  });
+});
+
+describe('分割線の位置合わせ', () => {
+  // 幅20・高さ10。x=0..7 と x=13..19 に絵、x=8..12 がすき間
+  const w = 20, h = 10;
+  const mask = new Uint8Array(w * h).fill(1);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < 8 || x > 12) mask[y * w + x] = 0;
+  it('線が絵にかかる画素数', () => {
+    expect(crossCount(mask, w, h, 'x', 10)).toBe(0);
+    expect(crossCount(mask, w, h, 'x', 5)).toBe(10);
+    expect(crossCount(mask, w, h, 'y', 3)).toBe(15);
+  });
+  it('近くのすき間の真ん中へ合わせる', () => {
+    expect(snapToGap(mask, w, h, 'x', 5, 10, 1, 18)).toBe(10);
+    expect(snapToGap(mask, w, h, 'x', 9, 10, 1, 18)).toBe(10);
+    expect(snapToGap(mask, w, h, 'x', 16, 10, 1, 18)).toBe(10);
+    expect(snapToGap(mask, w, h, 'x', 3, 2, 1, 18)).toBeNull(); // 範囲内にすき間なし
+    expect(snapToGap(mask, w, h, 'x', 5, 10, 1, 7)).toBeNull(); // 隣の線を越えない
   });
 });

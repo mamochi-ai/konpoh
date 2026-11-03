@@ -1436,45 +1436,80 @@ input[type='range'] {
   padding: 0;
   cursor: grab;
   touch-action: none;
+  --line: #2f8f5b;
 }
+.split-line.crosses {
+  --line: #d0402f;
+}
+.split-line.on {
+  --line: #d98a00;
+}
+.split-line.on.crosses {
+  --line: #d0402f;
+}
+/* 44pxのつかみ幅の中央に1pxの線。transformを使わず、端数ピクセルでにじまないようにする */
 .split-line.split-x {
   top: 0;
   bottom: 0;
   width: 44px;
-  transform: translateX(-50%);
+  margin-left: -22px;
 }
 .split-line.split-y {
   left: 0;
   right: 0;
   height: 44px;
-  transform: translateY(-50%);
+  margin-top: -22px;
 }
 .split-line-bar {
   position: absolute;
-  background: var(--primary);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+  background: var(--line);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
 }
 .split-x .split-line-bar {
   top: 0;
   bottom: 0;
-  left: 50%;
-  width: 2px;
-  transform: translateX(-50%);
+  left: 22px;
+  width: 1px;
 }
 .split-y .split-line-bar {
   left: 0;
   right: 0;
-  top: 50%;
-  height: 2px;
-  transform: translateY(-50%);
+  top: 22px;
+  height: 1px;
 }
 .split-line.on .split-line-bar {
-  background: var(--warn);
-  width: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 2px rgba(0, 0, 0, 0.15);
 }
-.split-y.on .split-line-bar {
-  height: 4px;
-  width: auto;
+.split-grip {
+  display: none;
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--line);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.split-line.on .split-grip {
+  display: block;
+}
+.split-x .split-grip {
+  left: 13px;
+  top: 4px;
+}
+.split-y .split-grip {
+  top: 13px;
+  left: 4px;
+}
+.cross-state {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.cross-state.ok {
+  color: var(--pass);
+}
+.cross-state.bad {
+  color: var(--err);
 }
 .cell-tag {
   position: absolute;

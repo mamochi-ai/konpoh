@@ -383,6 +383,16 @@ await step('編集：白背景の一覧画像→背景透過→すき間で2×3�
   const after = await page.textContent('.line-adjust strong');
   assert(before !== after, `線の調整 ${before} → ${after}`);
   await page.getByRole('button', { name: /1px 左へ/ }).click();
+  // 自動検出した線はすべてすき間の上（緑）。絵の上に動かすと赤になり、「すき間に合わせる」で戻る
+  assert((await page.locator('.split-line.crosses').count()) === 0, '検出直後は全部すき間の上');
+  assert((await page.textContent('.cross-state')).includes('すき間の上'), 'すき間表示');
+  for (let k = 0; k < 10; k++) await page.getByRole('button', { name: /10px 右へ/ }).click();
+  assert((await page.locator('.split-line.split-x.on.crosses').count()) === 1, '絵にかかると赤');
+  assert(/絵に[\d,]+画素かかっています/.test(await page.textContent('.cross-state')), 'かかり画素数');
+  await page.screenshot({ path: join(OUT, '1024-edit-line-crossing.png') });
+  await page.getByRole('button', { name: 'すき間に合わせる' }).click();
+  assert((await page.locator('.split-line.crosses').count()) === 0, 'すき間に戻った');
+  assert((await page.textContent('.line-adjust strong')) === before, `元の位置に戻る: ${await page.textContent('.line-adjust strong')} / ${before}`);
   // ドラッグ（マウス）でも動く
   const line = page.locator('.split-line.split-y').first();
   const bb = await line.boundingBox();

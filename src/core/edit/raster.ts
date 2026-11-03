@@ -355,3 +355,50 @@ export function prepareCell(r: Raster, mask: Uint8Array, cell: Rect, o: CellOpti
   }
   return placeOnCanvas(piece, cw, ch, Math.floor((cw - piece.width) / 2), Math.floor((ch - piece.height) / 2));
 }
+
+// ---------------------------------------------------------------- 分割線の位置合わせ
+
+/** 線（x列またはy行）の上にある「絵の画素」（背景でない画素）の数。0ならすき間の上 */
+export function crossCount(mask: Uint8Array, w: number, h: number, axis: 'x' | 'y', pos: number): number {
+  let n = 0;
+  if (axis === 'x') {
+    if (pos < 0 || pos >= w) return 0;
+    for (let y = 0; y < h; y++) if (!mask[y * w + pos]) n++;
+  } else {
+    if (pos < 0 || pos >= h) return 0;
+    const row = pos * w;
+    for (let x = 0; x < w; x++) if (!mask[row + x]) n++;
+  }
+  return n;
+}
+
+/**
+ * 近くのすき間（絵の画素が0の列/行の連続）の真ん中を返す。
+ * 現在位置が含まれるすき間を優先し、なければ range 以内で中心が最も近いもの。見つからなければ null。
+ * lo〜hi は動かせる範囲（隣の線の内側）。
+ */
+export function snapToGap(mask: Uint8Array, w: number, h: number, axis: 'x' | 'y', pos: number, range: number, lo: number, hi: number): number | null {
+  const len = axis === 'x' ? w : h;
+  const a = Math.max(lo, 0, Math.floor(pos - range));
+  const b = Math.min(hi, len - 1, Math.ceil(pos + range));
+  let best: number | null = null;
+  let bestDist = Infinity;
+  let k = a;
+  while (k <= b) {
+    if (crossCount(mask, w, h, axis, k) !== 0) {
+      k++;
+      continue;
+    }
+    let j = k;
+    while (j + 1 <= b && crossCount(mask, w, h, axis, j + 1) === 0) j++;
+    const center = Math.round((k + j) / 2);
+    const contains = pos >= k && pos <= j;
+    const d = contains ? -1 : Math.abs(center - pos);
+    if (d < bestDist) {
+      bestDist = d;
+      best = center;
+    }
+    k = j + 1;
+  }
+  return best;
+}
