@@ -1,5 +1,5 @@
 // プロジェクトバックアップZIP（投稿用ZIPとは別の種類・別の名前）
-import type { BundleTemplate, CheckTemplate, Project } from './types';
+import type { AssetRecord, BundleTemplate, CheckTemplate, Project } from './types';
 import { buildZip, readZip, ZipError, type BuildZipOptions } from './zip';
 import { validateBundleTemplate, validateCheckTemplate } from './templates';
 import { sha256Hex } from './hash';
@@ -12,7 +12,7 @@ export interface BackupManifest {
   kind: typeof BACKUP_KIND;
   createdAt: string;
   project: Omit<Project, 'assets'> & {
-    assets: { id: string; originalName: string; sourcePath: string; size: number; sha256: string; version: number; addedAt: string; replacedNames?: string[]; file: string; type: string }[];
+    assets: { id: string; originalName: string; sourcePath: string; size: number; sha256: string; version: number; addedAt: string; replacedNames?: string[]; derivedFrom?: AssetRecord['derivedFrom']; file: string; type: string }[];
   };
   checkTemplates: CheckTemplate[];
   bundleTemplates: BundleTemplate[];
@@ -44,6 +44,7 @@ export async function buildBackup(
     version: a.version,
     addedAt: a.addedAt,
     replacedNames: a.replacedNames,
+    derivedFrom: a.derivedFrom,
     file: `files/${a.id}/${safeSegment(a.originalName)}`,
     type: a.blob.type,
   }));
@@ -111,6 +112,7 @@ export async function restoreBackup(bytes: Uint8Array, signal?: AbortSignal): Pr
       version: a.version,
       addedAt: a.addedAt,
       replacedNames: a.replacedNames,
+      derivedFrom: a.derivedFrom,
       blob: new Blob([f.data as BlobPart], { type: a.type || 'application/octet-stream' }),
     });
   }

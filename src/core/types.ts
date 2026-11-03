@@ -82,6 +82,8 @@ export interface AssetRecord {
   version: number;
   addedAt: string;
   replacedNames?: string[];
+  /** 編集で作った画像なら、元画像と操作 */
+  derivedFrom?: { assetId: string; originalName: string; op: 'split' | 'background'; detail: string };
 }
 
 /** 役割参照：一つの素材を複数の役割から参照できる */

@@ -2,6 +2,7 @@
 import { applyDecoded, headerFacts, APP_LIMITS, type Decoded } from '../core/facts';
 import type { AssetFacts, AssetRecord } from '../core/types';
 import { detectContainer } from '../core/sniff';
+import type { Raster } from '../core/edit/raster';
 
 const MIME: Record<string, string> = { png: 'image/png', jpeg: 'image/jpeg' };
 
@@ -64,6 +65,16 @@ async function decodeRgba(blob: Blob, container: string): Promise<Decoded> {
     bmp?.close();
     release();
   }
+}
+
+/** 編集用に全画素を読み込む（原本Blobは変更しない） */
+export async function decodeAssetRaster(asset: AssetRecord): Promise<Raster> {
+  const bytes = new Uint8Array(await asset.blob.arrayBuffer());
+  const { facts, shouldDecode } = headerFacts(bytes, asset.originalName, asset.sha256, 8);
+  if (!shouldDecode) throw new Error(facts.decode.ok ? '読み込めません' : facts.decode.reason);
+  const d = await decodeRgba(asset.blob, facts.container);
+  if (!d.ok) throw new Error(d.reason);
+  return { width: d.width, height: d.height, data: new Uint8ClampedArray(d.rgba as Uint8ClampedArray) };
 }
 
 export async function analyzeAsset(asset: AssetRecord, threshold: number): Promise<AssetFacts> {

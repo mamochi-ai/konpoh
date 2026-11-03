@@ -381,17 +381,81 @@ await step('端末内保存（IndexedDB）→再読込で復元', async () => {
   assert((await page.locator('.thumb-card').count()) >= 18, 'カード復元');
 });
 
-await step('編集タブは準備中と明示し、元画像書出しのみ', async () => {
+await step('編集：元画像の書出しは原本とバイト一致', async () => {
   await page.getByRole('tab', { name: /編集/ }).click();
-  const t = await page.textContent('.main-col');
-  assert(t.includes('画像編集機能はまだありません') && t.includes('準備中'), '準備中表示');
+  await page.locator('summary', { hasText: '元画像の書出し' }).click();
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /01\.png の元画像を書き出す/ }).click()]);
   const p = join(OUT, 'orig-01.png');
   await dl.saveAs(p);
   assert(sha(readFileSync(p)) === sha(validFiles['01.png']), '元画像のバイト一致');
-  await page.screenshot({ path: join(OUT, '1024-edit.png') });
   await page.getByRole('tab', { name: /チェック/ }).click();
   await noHScroll(page, '1024');
+});
+
+await step('編集：白背景の一覧画像→背景透過→すき間で2×3を検出→LINE用に6枚切り出し→スタンプに割当・検査', async () => {
+  await newProject(page);
+  await addImages(page, [join(FIX, 'sheet-white-2x3.png')]);
+  const sheetSha = sha(readFileSync(join(FIX, 'sheet-white-2x3.png')));
+  await page.getByRole('tab', { name: /編集/ }).click();
+  await page.waitForSelector('.split-overlay');
+  const warn = await page.textContent('.tool');
+  assert(warn.includes('背景が透明ではありません'), '不透明背景の注意');
+  await page.getByRole('tab', { name: '背景透過' }).click();
+  await page.waitForSelector('text=透明にした画素');
+  const pct = await page.textContent('.tool-controls');
+  assert(/（[3-9]\d(\.\d)?%）/.test(pct), `透明化の割合: ${pct}`);
+  await page.screenshot({ path: join(OUT, '1024-edit-background.png') });
+  await page.getByRole('button', { name: '透過した画像を追加' }).click();
+  await page.waitForSelector('.toast-success >> text=透過した画像を追加しました');
+  await idle(page);
+  // 透過済み画像が選ばれ、分割へ
+  const selName = await page.$eval('#edit-asset', (e) => e.selectedOptions[0].textContent);
+  assert(selName.includes('sheet-white-2x3-transparent.png'), selName);
+  await page.getByRole('tab', { name: '一覧画像の分割' }).click();
+  await page.waitForSelector('text=すき間から 2行 × 3列 を見つけました');
+  assert((await page.locator('.split-line').count()) === 3, '分割線3本');
+  // 線をタップして1px動かし、元に戻す（ボタン操作）
+  await page.locator('.split-line.split-x').first().click({ position: { x: 22, y: 60 } });
+  const before = await page.textContent('.line-adjust strong');
+  await page.getByRole('button', { name: /1px 右へ/ }).click();
+  const after = await page.textContent('.line-adjust strong');
+  assert(before !== after, `線の調整 ${before} → ${after}`);
+  await page.getByRole('button', { name: /1px 左へ/ }).click();
+  // ドラッグ（マウス）でも動く
+  const line = page.locator('.split-line.split-y').first();
+  const bb = await line.boundingBox();
+  await page.mouse.move(bb.x + 60, bb.y + bb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bb.x + 60, bb.y + bb.height / 2 + 6, { steps: 3 });
+  await page.mouse.up();
+  const dragged = await page.textContent('.line-adjust strong');
+  assert(dragged.includes('横の線'), dragged);
+  await page.screenshot({ path: join(OUT, '1024-edit-split.png') });
+  assert((await page.$eval('#split-assign', (e) => e.selectedOptions[0].textContent)).includes('スタンプ'), 'スタンプ役割が既定');
+  await page.getByRole('button', { name: '6枚を切り出して追加' }).click();
+  await page.waitForSelector('.toast-success >> text=6枚を切り出して追加しました');
+  await idle(page);
+  await page.getByRole('tab', { name: /チェック/ }).click();
+  const heads = await page.$$eval('.role-head', (els) => els.map((e) => e.textContent));
+  assert(heads.some((h) => h.includes('スタンプ') && h.includes('6/16')), heads.join('|'));
+  // 切り出した6枚は寸法・偶数・透過・容量・DPIにエラーなし
+  for (let i = 1; i <= 6; i++) {
+    await (await card(page, String(i).padStart(2, '0'))).click();
+    const d = await page.textContent('.detail');
+    assert(d.includes(`sheet-white-2x3-transparent-0${i}.png`), `名前 ${i}`);
+    assert(!d.includes('エラー'), `${i}枚目にエラー: ${d.slice(0, 300)}`);
+    assert(d.includes('72.01'), `${i}枚目のDPI`);
+    assert(d.includes('作成元'), '作成元表示');
+  }
+  await page.screenshot({ path: join(OUT, '1024-edit-result-check.png') });
+  // 元の一覧画像は変わっていない（書出しで確認）
+  await page.getByRole('tab', { name: /編集/ }).click();
+  await page.locator('summary', { hasText: '元画像の書出し' }).click();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^sheet-white-2x3\.png の元画像を書き出す/ }).click()]);
+  const p = join(OUT, 'sheet-orig.png');
+  await dl.saveAs(p);
+  assert(sha(readFileSync(p)) === sheetSha, '元の一覧画像はバイト一致');
+  await page.getByRole('tab', { name: /チェック/ }).click();
 });
 await ctx.close();
 
@@ -431,6 +495,10 @@ for (const vp of [
     await p2.getByRole('tab', { name: /梱包/ }).click();
     await noHScroll(p2, `${vp.name} pack`);
     await p2.screenshot({ path: join(OUT, `${vp.name}-pack.png`), fullPage: true });
+    await p2.getByRole('tab', { name: /編集/ }).click();
+    await p2.waitForSelector('.split-overlay');
+    await noHScroll(p2, `${vp.name} edit`);
+    await p2.screenshot({ path: join(OUT, `${vp.name}-edit.png`), fullPage: true });
     await p2.getByRole('tab', { name: /チェック/ }).click();
     await p2.getByRole('button', { name: /ルールを編集/ }).click();
     await noHScroll(p2, `${vp.name} templates`);

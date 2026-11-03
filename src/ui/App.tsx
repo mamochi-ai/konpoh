@@ -67,7 +67,6 @@ export function App() {
               onClick={() => setState({ tab: t.id })}
             >
               {t.label}
-              {t.id === 'edit' && <span class="soon">準備中</span>}
             </button>
           ))}
         </nav>

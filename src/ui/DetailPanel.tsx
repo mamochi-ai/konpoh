@@ -130,6 +130,14 @@ export function DetailPanel() {
             <dd>未検査</dd>
           </>
         )}
+        {asset.derivedFrom && (
+          <>
+            <dt>作成元</dt>
+            <dd class="break">
+              {asset.derivedFrom.originalName}（{asset.derivedFrom.op === 'split' ? '分割' : '背景透過'}：{asset.derivedFrom.detail}）
+            </dd>
+          </>
+        )}
         <dt>SHA-256</dt>
         <dd class="mono break small">{asset.sha256}</dd>
         {asset.replacedNames?.length ? (
@@ -237,7 +245,7 @@ export function DetailPanel() {
         <button class="btn btn-block" onClick={() => exportOriginal(asset.id)}>
           <IconDownload /> 元画像を書き出す
         </button>
-        <p class="muted small center">チェックでは画像を変更しません。編集機能は準備中です。外部で修正した画像は「画像を差し替え」で読み込めます（役割と順序は維持）。</p>
+        <p class="muted small center">チェックでは画像を変更しません。分割・背景透過は「編集」タブで行えます（結果は新しい画像として追加）。外部で修正した画像は「画像を差し替え」で読み込めます（役割と順序は維持）。</p>
         <button
           class="btn btn-block btn-danger"
           onClick={() => {

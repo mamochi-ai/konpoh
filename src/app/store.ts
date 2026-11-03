@@ -27,6 +27,7 @@ import * as db from './db';
 import { analyzeAsset, makeThumbnail } from './imaging';
 
 export type Tab = 'edit' | 'check' | 'pack';
+export type EditTool = 'split' | 'background';
 
 export interface Job {
   kind: 'import' | 'check' | 'pack' | 'backup' | 'restore';
@@ -68,6 +69,7 @@ export interface AppState {
   thumbs: Record<string, { url: string | null; version: number }>;
   lastBackup: { blob: Blob; name: string; bytes: number } | null;
   confirm: ConfirmRequest | null;
+  edit: { assetId: string | null; tool: EditTool };
   tab: Tab;
   selectedAssetId: string | null;
   filter: 'all' | 'attention';
@@ -108,6 +110,7 @@ let state: AppState = {
   previewBg: 'checker',
   lastBackup: null,
   confirm: null,
+  edit: { assetId: null, tool: 'split' },
 };
 
 const listeners = new Set<() => void>();
@@ -753,4 +756,46 @@ export async function removeUserBundle(id: string): Promise<void> {
 
 export function downloadText(text: string, fileName: string, key: string) {
   saveFile(new Blob([text], { type: 'application/json' }), fileName, key);
+}
+
+// ---------------------------------------------------------------- 編集結果（派生画像）の追加
+
+export interface DerivedItem {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * 編集結果を新しい画像として追加する。元画像は変更しない。
+ * assign: 指定した役割へ順に割り当てる。transferRoles: 元画像の役割を新しい画像へ移す（1枚のとき）。
+ */
+export async function addDerivedAssets(
+  from: AssetRecord,
+  items: DerivedItem[],
+  op: 'split' | 'background',
+  detail: string,
+  opts: { assign?: { templateId: string; roleId: string }; transferRoles?: boolean } = {},
+): Promise<string[]> {
+  const created: AssetRecord[] = [];
+  for (const it of items) {
+    const a = await makeAsset(it.name, `${from.originalName} › ${op === 'split' ? '分割' : '背景透過'}`, it.bytes, 'image/png');
+    a.derivedFrom = { assetId: from.id, originalName: from.originalName, op, detail };
+    created.push(a);
+  }
+  updateProject((p) => {
+    let next = addAssets(p, created);
+    if (opts.transferRoles && created.length === 1) {
+      next = { ...next, refs: next.refs.map((r) => (r.assetId === from.id ? { ...r, assetId: created[0].id, nameOverride: undefined } : r)) };
+    }
+    if (opts.assign) for (const a of created) next = addRef(next, a.id, opts.assign.templateId, opts.assign.roleId);
+    return next;
+  });
+  refreshThumbnails();
+  const ids = created.map((a) => a.id);
+  await runCheck(ids);
+  return ids;
+}
+
+export function setEdit(patch: Partial<AppState['edit']>) {
+  setState((s) => ({ edit: { ...s.edit, ...patch } }));
 }
