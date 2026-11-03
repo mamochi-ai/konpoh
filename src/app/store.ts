@@ -219,6 +219,12 @@ export async function saveFile(blob: Blob, fileName: string, key: string): Promi
       return false;
     }
   }
+  // claude.ai の中で保存機能が使えない表示（共有先の環境など）では、通常のダウンロードも動かないので理由を伝える
+  const inViewer = !!(window as unknown as { claude?: { use?: unknown } }).claude?.use;
+  if (inViewer) {
+    toast(`${fileName}：この表示ではファイルを保存できません。claude.aiにサインインして開き直すか、作品の持ち主に保存を頼んでください。`, 'error');
+    return false;
+  }
   const url = holdUrl(key, blob);
   const a = document.createElement('a');
   a.href = url;
