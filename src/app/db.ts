@@ -1,10 +1,12 @@
 // 端末内保存（IndexedDB）。保存失敗は呼び出し側に例外として返す（握りつぶさない）
 import type { Project } from '../core/types';
+import type { TrialData } from '../core/trial';
 
 const DB_NAME = 'konpoh';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 // 以前の版で作ったテンプレート用ストアは互換のため残す（現在は使わない）
-const STORES = ['projects', 'checkTemplates', 'bundleTemplates', 'meta'] as const;
+// 版2で試し送り用（trialState: 会話・メモ・お題・表示設定、trialImages: 試し送りで読み込んだ画像のBlob）を追加
+const STORES = ['projects', 'checkTemplates', 'bundleTemplates', 'meta', 'trialState', 'trialImages'] as const;
 type StoreName = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -63,4 +65,29 @@ export async function requestPersistence(): Promise<boolean | null> {
     /* 判定できない場合は null */
   }
   return null;
+}
+
+// ---------------------------------------------------------------- 試し送り（画像Blobは IndexedDB に保存。localStorage は使わない）
+
+export async function loadTrial(): Promise<{ data: unknown; images: Record<string, Blob> }> {
+  const data = await tx<unknown>('trialState', 'readonly', (s) => s.get('current') as IDBRequest<unknown>);
+  const keys = (await tx<IDBValidKey[]>('trialImages', 'readonly', (s) => s.getAllKeys() as IDBRequest<IDBValidKey[]>)) ?? [];
+  const values = (await tx<Blob[]>('trialImages', 'readonly', (s) => s.getAll() as IDBRequest<Blob[]>)) ?? [];
+  const images: Record<string, Blob> = {};
+  keys.forEach((k, i) => {
+    if (typeof k === 'string' && values[i] instanceof Blob) images[k] = values[i];
+  });
+  return { data, images };
+}
+
+export async function saveTrialData(d: TrialData): Promise<void> {
+  await tx('trialState', 'readwrite', (s) => s.put(d, 'current'));
+}
+
+export async function putTrialImage(id: string, blob: Blob): Promise<void> {
+  await tx('trialImages', 'readwrite', (s) => s.put(blob, id));
+}
+
+export async function deleteTrialImage(id: string): Promise<void> {
+  await tx('trialImages', 'readwrite', (s) => s.delete(id));
 }

@@ -26,8 +26,9 @@ import { buildBackup, backupFileName, restoreBackup } from '../core/backup';
 import * as db from './db';
 import { analyzeAsset, makeThumbnail } from './imaging';
 import { imageDims, isLikelySheet, type Dims } from '../core/sheet';
+import { newTrialData, normalizeTrialData, type TrialData } from '../core/trial';
 
-export type Tab = 'edit' | 'check' | 'pack';
+export type Tab = 'edit' | 'check' | 'trial' | 'pack';
 export type EditTool = 'split' | 'background';
 
 export interface Job {
@@ -71,6 +72,11 @@ export interface AppState {
   edit: { assetId: string | null; tool: EditTool };
   /** 各画像の寸法（ヘッダーから。一覧画像の案内に使う） */
   dims: Record<string, Dims | null>;
+  /** 試し送り（会話・メモ・お題・表示設定）。プロジェクトとは別に保存する */
+  trial: TrialData;
+  /** 試し送りで読み込んだ画像のBlob（idごと） */
+  trialBlobs: Record<string, Blob>;
+  trialSave: { status: 'idle' | 'saving' | 'saved' | 'error'; message?: string; at?: string };
   /** 画像追加で編集タブへ切り替えたときの案内 */
   editHint: { names: string[] } | null;
   tab: Tab;
@@ -112,6 +118,9 @@ let state: AppState = {
   edit: { assetId: null, tool: 'split' },
   dims: {},
   editHint: null,
+  trial: newTrialData(),
+  trialBlobs: {},
+  trialSave: { status: 'idle' },
 };
 
 const listeners = new Set<() => void>();
@@ -271,6 +280,15 @@ export async function init() {
     }
   } catch (e) {
     patch.saveError = `端末内の保存データを読み込めませんでした: ${(e as Error).message}`;
+  }
+  try {
+    const t = await db.loadTrial();
+    patch.trial = normalizeTrialData(t.data ?? null);
+    patch.trialBlobs = t.images;
+    // 本体が見つからない試し送りの画像は一覧から外す（壊れた参照を残さない）
+    patch.trial = { ...patch.trial, localImages: patch.trial.localImages.filter((m) => t.images[m.id]) };
+  } catch (e) {
+    patch.trialSave = { status: 'error', message: `試し送りの保存データを読み込めませんでした: ${(e as Error).message}` };
   }
   setState(patch);
   db.requestPersistence().then((v) => setState({ persistence: v }));
@@ -752,4 +770,31 @@ function scrollTop() {
 
 export function setEdit(patch: Partial<AppState['edit']>) {
   setState((s) => ({ edit: { ...s.edit, ...patch } }));
+}
+
+// ---------------------------------------------------------------- 試し送りから使うプロジェクト操作
+
+/** Blobを新しい画像としてプロジェクトに追加（チェックは自動で走らせない＝未検査のまま） */
+export async function addBlobAsProjectAsset(name: string, blob: Blob, sourcePath: string): Promise<string> {
+  const a = await makeAsset(name, sourcePath, new Uint8Array(await blob.arrayBuffer()), blob.type);
+  updateProject((p) => addAssets(p, [a]));
+  refreshThumbnails();
+  return a.id;
+}
+
+/** プロジェクトの画像を差し替える（役割と順序は維持）。以前のチェック結果は破棄され「未検査」になる */
+export async function replaceAssetWithBlob(assetId: string, name: string, blob: Blob): Promise<void> {
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const sha = await sha256Hex(data);
+  updateProject((p) => replaceAsset(p, assetId, { originalName: name, blob: new Blob([data as BlobPart], { type: blob.type }), size: data.length, sha256: sha, sourcePath: `${name}（試し送りから採用）` }));
+  refreshThumbnails();
+}
+
+export function showInCheck(assetId: string) {
+  setState({ tab: 'check', selectedAssetId: assetId });
+  try {
+    window.scrollTo({ top: 0 });
+  } catch {
+    /* 無視 */
+  }
 }

@@ -4,11 +4,13 @@ import { IconBox, IconClose, IconImage, IconLock, IconSave, IconZip, IconArrowRi
 import { CheckView } from './CheckView';
 import { PackView } from './PackView';
 import { EditView } from './EditView';
+import { TrialView } from './TrialView';
 import { runCheck } from '../app/store';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'edit', label: '編集' },
   { id: 'check', label: 'チェック' },
+  { id: 'trial', label: '試し送り' },
   { id: 'pack', label: '梱包' },
 ];
 
@@ -120,6 +122,7 @@ export function App() {
         {s.tab === 'check' && <CheckView />}
         {s.tab === 'pack' && <PackView />}
         {s.tab === 'edit' && <EditView />}
+        {s.tab === 'trial' && <TrialView />}
       </div>
 
       <footer class="footbar">
@@ -131,6 +134,16 @@ export function App() {
             <>
               <button class="btn" onClick={() => runCheck()} disabled={!!s.job || !s.project.assets.length}>
                 検査を実行{ev.imageCounts.unchecked ? `（未検査${ev.imageCounts.unchecked}）` : ''}
+              </button>
+              <button class="btn btn-primary" onClick={() => setState({ tab: 'pack', selectedAssetId: null })}>
+                梱包へ進む <IconArrowRight size={18} />
+              </button>
+            </>
+          )}
+          {s.tab === 'trial' && (
+            <>
+              <button class="btn" onClick={() => setState({ tab: 'check' })}>
+                チェックへ
               </button>
               <button class="btn btn-primary" onClick={() => setState({ tab: 'pack', selectedAssetId: null })}>
                 梱包へ進む <IconArrowRight size={18} />
